@@ -11,10 +11,13 @@ reachable, and what to do about it.
 - **The 511 is inflated ~10x.** Dependabot scans six manifests. None of them
   governs production. The same advisory is counted once per manifest.
 - **The only genuinely exploitable residual is the libvips JPEG/PNG path in
-  `sharp`.** The `sharp` 0.34 -> 0.35.5 bump (commit `d78f8ed`) closes it.
-- **Most other runtime advisories patch themselves on the next image build.**
-  Both Dockerfiles run `npm install` against caret ranges with no lockfile, so
-  in-range fixes land automatically.
+  `sharp`.** The `sharp` 0.34 -> 0.35.5 bump (commit `d78f8ed`) is staged on
+  `dev` and closes it. Production still runs `sharp` 0.34.5 until the next
+  deploy, so the window is open until then.
+- **Most other runtime advisories patch themselves on each image build, and
+  many are likely already live.** Both Dockerfiles run `npm install` against
+  caret ranges with no lockfile. The most recent build (v1.12.36) resolved
+  dependencies fresh, so in-range fixes released before that date already ship.
 
 ## How production resolves dependencies
 
@@ -38,7 +41,7 @@ Consequences:
 | `backend/package-lock.json` | 148 | No |
 | `package-lock.json` (root) | 142 | No |
 | `frontend/package-lock.json` | 109 | No (static browser bundle) |
-| `sdks/javascript/package-lock.json` | 75 | No (published SDK) |
+| `sdks/javascript/package-lock.json` | 75 | No to the production service; yes, published to customers via npm |
 | `engine/package-lock.json` | 31 | No |
 | `community-overrides/frontend/package.json` | 6 | No |
 
@@ -56,8 +59,14 @@ labels alone do not reflect exposure here.
 |---|---|---|---|
 | `proxy-addr` IP spoof | critical | No | `trust proxy` is `1` (hop count). The bug lives in the subnet-trust path, which `1` never invokes. |
 | `sharp` libheif / librsvg | high | No | `fileValidation.ts` allows only `jpeg`/`png`/`pdf` and checks magic bytes. HEIF and SVG are rejected before `sharp` runs. |
-| `sharp` libvips (JPEG/PNG) | high | Partial | A malicious JPEG or PNG still reaches libvips. Fixed by `sharp` 0.35.5 (commit `d78f8ed`). |
+| `sharp` libvips (JPEG/PNG) | high | Partial | A malicious JPEG or PNG still reaches libvips. Fixed by `sharp` 0.35.5 (commit `d78f8ed`), staged on `dev`, not yet deployed. |
 | `image-size` JXL/ICNS/HEIF loop | high | No | The allowlist blocks every format with a vulnerable parser. |
+
+The "No" verdicts above depend on `validateFileType` running before `sharp` or
+`image-size` touches the buffer. That is verified for the three v2 verify upload
+routes (`newVerification.ts:1157`, `:1486`, `:1713`) and address verification
+(`addressVerification.ts:63`). The API-key `batch.ts` path is not separately
+verified.
 | `axios` SSRF / redirect | high | Mitigated | `webhook.ts:275,346` sets `maxRedirects: 0`. Backend uses the Node HTTP adapter, not the fetch adapter the advisory targets. |
 | `form-data` CRLF via filename | high | Low | `req.file.originalname` reaches the engine as a multipart filename. The fix is in range and lands on rebuild. |
 | `adm-zip`, `dompurify` | high / mod | No | Neither is imported in source. The app does not extract untrusted ZIPs or sanitize HTML with DOMPurify. |
@@ -89,8 +98,11 @@ Leave them.
   because each carries API changes:
   - `jimp` 0.22 -> 1.6 (engine)
   - `node-cron` 3 -> 4 (backend)
-  - `uuid` 9 -> 14 (backend). Current use does not pass a `buf` argument, so the
-    advisory does not apply today.
+  - `uuid` 9 -> 14 (backend). Source never passes a `buf` argument (verified by
+    grep), so the advisory does not apply today.
+- **SDK advisories reach customers.** `npm audit --omit=dev` in
+  `sdks/javascript` reports 2 high-severity production advisories. The published
+  SDK ships them to every consumer. Triage and patch these on their own track.
 - **Reduce the Dependabot count.** The count reflects lockfile contents, not
   `dependabot.yml`, which controls version-update pull requests rather than
   security alerts. Two options:
@@ -105,11 +117,33 @@ Leave them.
 - The frontend browser-bundle advisories (not reachable in a Vite SPA).
 - The CI `npm audit` gate.
 
-## Verification note
+## Verification
 
-This triage ran `npm audit` against each manifest. The `sharp` bump is not
-verified by a local install. This machine's npm 9.2.0 crashes on `npm install`
-for the whole workspace (`calc-dep-flags` arborist bug), and the crash reproduces
-at `sharp` 0.34.5, so it is unrelated to the bump. CI runs `npm install` plus the
-`vitest` suite on Node 20 (npm 10) on every push to `dev`, which validates the
-change.
+What CI verified on push `df4d219` (`ubuntu-latest`, Node 20):
+
+- `npm install` resolved `sharp` 0.35.5 cleanly for the backend workspace.
+- `tsc --noEmit` passed for shared, backend, frontend, and engine.
+- The backend `vitest` suite passed. It loads real `sharp`, including
+  `sharpTamperDetector.test.ts` and `imagePreprocessor.test.ts`, so the
+  ELA/entropy tamper path ran under 0.35.5 and its assertions held.
+
+What remains unverified:
+
+- The engine has no test script, so its `sharp` path (`engine/src/routes/extract.ts`)
+  is untested by CI.
+- CI runs on `ubuntu-latest`, not the Debian 12 `node:20-slim` runtime image.
+- A local install could not confirm any of this. This machine's `npm install`
+  crashes for the whole workspace (`calc-dep-flags` arborist error). The crash
+  reproduces at the unmodified `sharp` 0.34.5, so it is a pre-existing
+  local-environment problem, not the bump. The cause is not fully established.
+
+Pre-deploy gates for the `sharp` bump:
+
+- Build both images with `docker-compose.build.yml` and run
+  `node -e "require('sharp')"` inside each. Railway deploys from `main`, and the
+  Docker image CI runs only on `v*` tags, so neither catches a native-load
+  failure on the runtime base before deploy.
+- Run the tamper path on `backend/scripts/benchmark/specimens` under 0.34.5 and
+  0.35.5 inside a `node:20` container. A libvips change can shift ELA, entropy,
+  and FFT scores. The gates use fixed thresholds, so a case near a boundary can
+  flip.
