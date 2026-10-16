@@ -5,6 +5,28 @@ All notable changes to the Idswyft Main API are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.34] - 2026-10-16
+
+Community security contributions from `moroccogregory-cyber`, reviewed and ported.
+
+### Fixed
+- **Cross-tenant IDOR in local file serving** (`backend`, community #73): with
+  `STORAGE_PROVIDER=local`, `serveLocalFile` authenticated the caller but never
+  checked they owned the requested document/selfie, so any authenticated
+  developer could fetch another tenant's uploaded ID by path. Now resolves the
+  owning `developer_id` via `documents`/`selfies` → `verification_requests` and
+  requires it to match the caller (platform admins exempt; unknown paths denied).
+- **PII in debug logs** (`backend`, community #74): barcode/OCR and
+  cross-validator logging emitted raw OCR text, ID numbers, names, DOB, and
+  addresses. Reduced to presence/length only via a `describeFieldForLog` helper.
+  (Engine-side extraction logging is a separate follow-up.)
+
+### Changed
+- **Bare `/health` status normalized to `'ok'`** (`backend`, community #71),
+  matching the common `{status:'ok'}` contract; `timestamp`/`version`/
+  `environment` unchanged. Docker/Railway health checks test HTTP reachability,
+  not the body string.
+
 ## [1.12.33] - 2026-10-05
 
 ### Fixed
