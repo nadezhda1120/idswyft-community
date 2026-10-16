@@ -8,6 +8,7 @@ import { idempotencyMiddleware } from '@/middleware/idempotency.js';
 import { catchAsync, ValidationError, FileUploadError } from '@/middleware/errorHandler.js';
 import { validate } from '@/middleware/validate.js';
 import { StorageService } from '@/services/storage.js';
+import { DataRetentionService } from '@/services/dataRetention.js';
 import { VerificationService } from '@/services/verification.js';
 import { OCRService } from '@/services/ocr.js';
 import { BarcodeService } from '@/services/barcode.js';
@@ -44,6 +45,7 @@ import { screenAll } from '@/providers/aml/multiScreen.js';
 import { computeRiskScore } from '@/services/riskScoring.js';
 import { analyzeVelocity } from '@/services/velocityAnalysis.js';
 import { analyzeGeoRisk } from '@/services/geoAnalysis.js';
+import { recordApplicantIp } from '@/services/applicantIp.js';
 import { broadcastStatusChange } from '@/services/realtime.js';
 import { saveSessionState, loadSessionState } from '@/services/sessionPersistence.js';
 
@@ -82,6 +84,7 @@ const INLINE_FLOW_FALLBACKS: Partial<Record<string, FlowConfig>> = {
 };
 
 const storageService = new StorageService();
+const dataRetentionService = new DataRetentionService();
 const verificationService = new VerificationService();
 const ocrService = new OCRService();
 const barcodeService = new BarcodeService();
@@ -1159,6 +1162,7 @@ router.post('/:verification_id/front-document',
     const { verification_id } = req.params;
     const { document_type = 'auto', issuing_country } = req.body;
     const verification = await requireOwnedVerification(req, verification_id);
+    await recordApplicantIp(req, verification_id);
     const isSandbox = (verification as any).is_sandbox || false;
     const source: VerificationSource = (verification as any).source || 'api';
 
@@ -1487,6 +1491,7 @@ router.post('/:verification_id/back-document',
     const { verification_id } = req.params;
     const { document_type = 'other' } = req.body;
     const verification = await requireOwnedVerification(req, verification_id);
+    await recordApplicantIp(req, verification_id);
     const isSandbox = (verification as any).is_sandbox || false;
     const source: VerificationSource = (verification as any).source || 'api';
 
@@ -1712,6 +1717,8 @@ router.post('/:verification_id/live-capture',
 
     const { verification_id } = req.params;
     const verification = await requireOwnedVerification(req, verification_id);
+    // Before the velocity/geo analysis below reads client_ip back
+    await recordApplicantIp(req, verification_id);
     const isSandbox = (verification as any).is_sandbox || false;
     const source: VerificationSource = (verification as any).source || 'api';
 
@@ -2333,6 +2340,18 @@ router.post('/:verification_id/restart',
         success: false,
         message: 'Maximum retry attempts reached (3)',
         retry_count: currentRetryCount,
+      });
+    }
+
+    // The failed attempt's documents and selfie rows are deleted below, and
+    // they hold the only reference to its image files, so the files go
+    // first. If any cannot be deleted, nothing is reset: the rows keep
+    // pointing at the file and the applicant can simply try again.
+    const filesDeleted = await dataRetentionService.deleteVerificationFiles(verification_id);
+    if (!filesDeleted) {
+      return res.status(503).json({
+        success: false,
+        message: 'Could not restart the verification. Please try again.',
       });
     }
 
