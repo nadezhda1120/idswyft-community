@@ -120,7 +120,7 @@ export class StorageService {
       }
     } catch (error) {
       logger.error('Failed to store document:', error);
-      throw new Error('Failed to store document');
+      throw new Error('Failed to store document', { cause: error });
     }
   }
 
@@ -146,7 +146,7 @@ export class StorageService {
       }
     } catch (error) {
       logger.error('Failed to store selfie:', error);
-      throw new Error('Failed to store selfie');
+      throw new Error('Failed to store selfie', { cause: error });
     }
   }
 
@@ -169,7 +169,7 @@ export class StorageService {
 
     if (error) {
       logger.error('Supabase storage error:', error);
-      throw new Error('Failed to upload to Supabase storage');
+      throw new Error('Failed to upload to Supabase storage', { cause: error });
     }
 
     // Encode bucket in returned path for non-default buckets
