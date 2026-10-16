@@ -5,6 +5,37 @@ All notable changes to the Idswyft Main API are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.35] - 2026-10-16
+
+Community contributions from `brigitte-certaindata`, reviewed and ported.
+
+### Added
+- **`document_authenticity` in the status response** (`backend`, community #67):
+  the front-document tamper score was computed on every upload but only logged;
+  now returned by `GET /api/v2/verify/:id/status`.
+
+### Fixed
+- **Liveness/deepfake result lost on a rejected capture** (`backend`, community
+  #69): `submitLiveCapture` set `state.liveness`/`state.deepfake_check` only
+  after Gate 4, so a rejected capture returned `liveness_results: null`. Record
+  them before Gate 4 so a failed capture keeps its score.
+- **Velocity/geo used the integrator's server IP** (`backend`, community #66,
+  closes community #65): `/initialize` stores `client_ip` from `req.ip`, which is
+  the integrator's backend on server-to-server calls. The browser-driven capture
+  requests now overwrite it with the applicant's IP (API-key callers skipped).
+- **Frozen preview on capture failure** (`frontend`, community #63):
+  `IDCameraCapture` stopped the stream before `toBlob` ran; a null blob or
+  thrown error left a frozen preview. Capture is now wrapped end-to-end, errors
+  surface, output is capped at 1600px, and the unmount cleanup revokes the real
+  blob URL.
+- **Abandoned-capture cleanup grace period + retry** (`backend`, community #64,
+  follow-up to #60): wait 15 min past session expiry before purging, and keep a
+  row whose file failed to delete so the next run retries instead of orphaning it.
+- **Restart orphaned image files** (`backend`, community #68): `POST /:id/restart`
+  deleted the failed attempt's rows but not the files they referenced. Delete the
+  files first; if any can't be deleted, return 503 and reset nothing so the
+  applicant can retry.
+
 ## [1.12.34] - 2026-10-16
 
 Community security contributions from `moroccogregory-cyber`, reviewed and ported.
