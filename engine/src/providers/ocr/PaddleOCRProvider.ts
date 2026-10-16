@@ -430,7 +430,13 @@ export class PaddleOCRProvider implements OCRProvider {
       documentType: resolvedDocType,
       issuingCountry: country,
       fields: Object.keys(ocrData).filter(k => k !== 'raw_text' && k !== 'confidence_scores'),
-      ocrData,
+      // Presence/length only — never the extracted PII values (community #74,
+      // engine-side follow-up).
+      populated: Object.fromEntries(
+        Object.entries(ocrData)
+          .filter(([k]) => k !== 'raw_text' && k !== 'confidence_scores')
+          .map(([k, v]) => [k, typeof v === 'string' ? `len=${v.length}` : (v == null ? 'null' : 'set')]),
+      ),
     });
 
     return ocrData;
@@ -561,10 +567,12 @@ export class PaddleOCRProvider implements OCRProvider {
 
     const flatLines = this.flattenLines(lines);
 
+    // Geometry/confidence/length only — the line text is raw document PII
+    // (community #74, engine-side follow-up).
     logger.info('PaddleOCR DL extraction — raw lines', {
       lineCount: flatLines.length,
       lines: flatLines.map((l, i) =>
-        `[${i}] y=${Math.round(l.y)} x=${Math.round(l.x)} (${l.confidence.toFixed(2)}) "${l.text}"`
+        `[${i}] y=${Math.round(l.y)} x=${Math.round(l.x)} (${l.confidence.toFixed(2)}) len=${l.text.length}`
       ),
     });
 
@@ -1884,7 +1892,13 @@ export class PaddleOCRProvider implements OCRProvider {
       }
     }
 
-    logger.info('EU DL numbered fields extracted', { fields: Object.fromEntries(fields) });
+    // Presence/length only — the values are extracted PII (community #74,
+    // engine-side follow-up).
+    logger.info('EU DL numbered fields extracted', {
+      fields: Object.fromEntries(
+        [...fields].map(([k, v]) => [k, typeof v === 'string' ? `len=${v.length}` : 'set']),
+      ),
+    });
 
     // Helper: strip trailing date patterns and numbers from name values
     const stripTrailingNoise = (s: string) =>

@@ -5,6 +5,16 @@ All notable changes to the Idswyft Main API are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.36] - 2026-10-16
+
+### Fixed
+- **PII in engine OCR logs** (`engine`, follow-up to community #74): the engine
+  worker logged extracted field values and raw OCR line text (names, DOB,
+  document/ID numbers) on the cloud path. Redacted the three `PaddleOCRProvider`
+  log sites to presence/length only. Does not alter past log contents — shorten
+  the engine service's log retention or purge existing logs separately if
+  required.
+
 ## [1.12.35] - 2026-10-16
 
 Community contributions from `brigitte-certaindata`, reviewed and ported.
