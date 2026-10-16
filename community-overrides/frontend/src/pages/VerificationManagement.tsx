@@ -117,7 +117,7 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; border: string;
 
 const getStatusConfig = (status: string) => STATUS_CONFIG[status] || STATUS_CONFIG.pending
 
-const truncateId = (id: string | null | undefined) => {
+export const truncateId = (id: string | null | undefined) => {
   if (!id) return '—'
   return id.length > 12 ? `${id.slice(0, 6)}...${id.slice(-4)}` : id
 }
