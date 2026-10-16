@@ -5,6 +5,28 @@ All notable changes to the Idswyft Main API are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.37] - 2026-10-16
+
+### Security
+- **`sharp` 0.34 -> 0.35.5** (`backend`, `engine`): closes the libvips image-decode
+  CVEs (CVE-2026-33327/33328/35590/35591) and the libheif/librsvg advisories. The
+  upload allowlist (`jpeg`/`png`/`pdf`, magic-byte checked) already blocked the
+  HEIF/SVG parsers, so only the libvips JPEG/PNG path was reachable. Verified the
+  tamper detector (ELA, entropy, FFT, score) returns identical results across the
+  bump (libvips 8.17.3 -> 8.18.7) on JPEG/PNG inputs, so the deterministic-decision
+  invariant holds.
+
+### Fixed
+- **Storage write failures now preserve the underlying cause** (`backend`):
+  `storeDocument`, `storeSelfie`, and `storeInSupabase` logged the real error but
+  rethrew a generic message, so Sentry (issue `NODE-EXPRESS-C`) saw only "Failed
+  to store document". Attach the original error via the `cause` option.
+
+### Added
+- **Dependency vulnerability triage** (`SECURITY/dependency-triage.md`): records
+  the per-manifest breakdown of the Dependabot alerts, per-advisory reachability,
+  and the remaining recommended upgrades.
+
 ## [1.12.36] - 2026-10-16
 
 ### Fixed

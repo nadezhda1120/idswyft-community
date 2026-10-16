@@ -37,6 +37,9 @@ interface SettingsModalProps {
   token: string
   onClose: () => void
   onAccountDeleted: () => void
+  // Accepted so DeveloperPage can pass it (the private SettingsModal uses it
+  // for operator-scoped UI); the community override doesn't render that UI.
+  isOperator?: boolean
 }
 
 export function SettingsModal({ token, onClose, onAccountDeleted }: SettingsModalProps) {

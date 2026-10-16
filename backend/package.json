@@ -1,6 +1,6 @@
 {
   "name": "idswyft-backend",
-  "version": "1.12.36",
+  "version": "1.12.37",
   "description": "Backend API for Idswyft identity verification platform",
   "type": "module",
   "main": "dist/server.js",
@@ -53,7 +53,7 @@
     "pg": "^8.21.0",
     "pixelmatch": "^4.0.2",
     "qrcode": "^1.5.4",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.5",
     "uuid": "^9.0.1",
     "validator": "^13.15.35",
     "web-did-resolver": "^2.0.32",
