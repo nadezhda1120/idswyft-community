@@ -15,9 +15,22 @@
  * score, so reviewers and the risk model keep seeing it.
  */
 
+import { createRequire } from 'node:module';
 import geoip from 'geoip-lite';
 import { logger } from '@/utils/logger.js';
 import type { GeoAnalysisResult, GeoRiskFlag } from '@idswyft/shared';
+
+// GeoIP data vintage. geoip-lite bundles its country data inside the package
+// and exposes no build date, so the pinned package version is the data
+// snapshot's identifier. Recording it lets a reviewer tell when a lookup came
+// from old data (issue #60). Read once at module load; null if unreadable.
+const GEOIP_DATA_VERSION: string | null = (() => {
+  try {
+    return createRequire(import.meta.url)('geoip-lite/package.json').version ?? null;
+  } catch {
+    return null;
+  }
+})();
 
 // ── Flag scores (highest wins — not cumulative) ─────────────────────
 const FLAG_SCORES: Record<GeoRiskFlag, number> = {
@@ -171,6 +184,7 @@ export async function analyzeGeoRisk(
       is_datacenter: false,
       flags: [],
       score: 0,
+      geoip_data_version: GEOIP_DATA_VERSION,
     };
   }
 
@@ -216,5 +230,6 @@ export async function analyzeGeoRisk(
     is_datacenter: isDatacenter,
     flags,
     score,
+    geoip_data_version: GEOIP_DATA_VERSION,
   };
 }

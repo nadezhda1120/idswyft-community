@@ -34,6 +34,18 @@ describe('analyzeGeoRisk', () => {
     expect(result.is_datacenter).toBe(false);
     expect(result.flags).toEqual([]);
     expect(result.score).toBe(0);
+    // Data vintage is reported even when there is no IP to look up
+    expect(result).toHaveProperty('geoip_data_version');
+  });
+
+  it('reports the geoip-lite data version (snapshot vintage) in the result (issue #60)', async () => {
+    mockLookup.mockReturnValue({ country: 'US', region: '', city: '' });
+
+    const result = await analyzeGeoRisk('8.8.8.8', 'US');
+
+    // The pinned geoip-lite version identifies the bundled data snapshot
+    expect(typeof result.geoip_data_version).toBe('string');
+    expect(result.geoip_data_version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   it('returns valid geo data for a known public IP', async () => {

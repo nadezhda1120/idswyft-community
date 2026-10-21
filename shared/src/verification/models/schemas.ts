@@ -308,6 +308,7 @@ export interface GeoAnalysisResult {
   is_datacenter: boolean;
   flags: GeoRiskFlag[];
   score: number;                   // 0-100, higher = more suspicious
+  geoip_data_version?: string | null; // pinned geoip-lite version — the GeoIP data snapshot vintage (absent on verifications created before it shipped)
 }
 
 // --- Session State ---

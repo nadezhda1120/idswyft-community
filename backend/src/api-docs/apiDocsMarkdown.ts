@@ -1236,6 +1236,7 @@ The \`geo_analysis\` object appears in both the live-capture response and the st
 | is_datacenter | boolean | Whether the IP belongs to a known cloud/VPN provider |
 | flags | string[] | Array of geo risk flags triggered |
 | score | number | Geo risk score (0–100), highest flag score wins |
+| geoip_data_version | string \\| null | Version of the bundled GeoIP data used for the lookup (its snapshot vintage). Absent on verifications created before this field shipped |
 
 ### Geo Risk Flags
 
@@ -1249,7 +1250,8 @@ The \`geo_analysis\` object appears in both the live-capture response and the st
 **Key design decisions:**
 - Score is the **maximum** individual flag score, not cumulative
 - Geo risk is a **risk signal** (7% weight in composite score) — it never independently hard-rejects
-- Sessions with geo flags route to \`manual_review\` for human evaluation
+- \`tor_exit_node\`, \`datacenter_ip\`, and \`high_risk_country\` route to \`manual_review\` for human evaluation
+- \`country_mismatch\` does **not** route to review on its own — the bundled GeoIP data can misattribute a residential IP block, so a lone mismatch is informational. It stays in \`flags\` and in the score, and \`geoip_data_version\` records the data vintage behind it
 - Sandbox verifications are excluded from geo analysis
 - The Tor exit list is cached for 24 hours and refreshes in the background
 
