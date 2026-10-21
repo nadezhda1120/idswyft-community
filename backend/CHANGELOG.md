@@ -5,6 +5,25 @@ All notable changes to the Idswyft Main API are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.38] - 2026-10-20
+
+### Fixed
+- **A single `country_mismatch` geo flag no longer forces manual review**
+  (`backend`, issue #60): the bundled `geoip-lite` snapshot can misattribute a
+  residential IP block to the wrong country. Because any geo flag routed to
+  `manual_review`, one stale entry sent every applicant on that block to a
+  reviewer. New `routingGeoFlags()` excludes `country_mismatch` from the review
+  decision at every routing and reason site, while keeping it in
+  `geo_analysis.flags` and in the risk score for reviewers and the risk model.
+  `tor_exit_node`, `datacenter_ip`, and `high_risk_country` still route on their
+  own.
+
+### Changed
+- **Pinned `geoip-lite` to exact `2.0.2`** (`backend`, was `^2.0.2`): the
+  Dockerfiles run `npm install` with no lockfile, so the caret let each build
+  resolve a different bundled GeoIP data snapshot. An exact version makes the
+  data reproducible across builds.
+
 ## [1.12.37] - 2026-10-16
 
 ### Security

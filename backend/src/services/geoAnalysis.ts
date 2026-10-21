@@ -9,6 +9,10 @@
  *
  * Results feed into risk scoring as a weighted signal (0.07).
  * Flagged sessions route to manual_review, never hard-reject.
+ *
+ * Routing uses a narrower set than scoring: country_mismatch alone does not
+ * route to review (see routingGeoFlags). It still contributes to flags and the
+ * score, so reviewers and the risk model keep seeing it.
  */
 
 import geoip from 'geoip-lite';
@@ -22,6 +26,25 @@ const FLAG_SCORES: Record<GeoRiskFlag, number> = {
   datacenter_ip: 50,
   high_risk_country: 40,
 };
+
+/**
+ * Flags that route a verification to manual review on their own.
+ *
+ * country_mismatch is deliberately excluded. The bundled geoip-lite data is a
+ * static snapshot that can misattribute a residential IP block to the wrong
+ * country (issue #60: a US apartment-ISP block resolved to BR). Because any geo
+ * flag forces review, one stale entry would send every applicant on that block
+ * to a reviewer. Excluding country_mismatch here stops that, while leaving the
+ * flag in GeoAnalysisResult.flags and in the score for reviewers and the risk
+ * model to read. tor_exit_node, datacenter_ip and high_risk_country are
+ * stronger signals and still route on their own.
+ *
+ * @param flags - all geo flags from analyzeGeoRisk
+ * @returns the subset that warrants manual review
+ */
+export function routingGeoFlags(flags: GeoRiskFlag[]): GeoRiskFlag[] {
+  return flags.filter(flag => flag !== 'country_mismatch');
+}
 
 // ── High-risk countries (sanctioned / elevated fraud jurisdictions) ──
 const HIGH_RISK_COUNTRIES = new Set([
