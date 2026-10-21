@@ -5,6 +5,22 @@ All notable changes to the Idswyft Main API are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.39] - 2026-10-20
+
+### Fixed
+- **IPv4-mapped IPv6 client IPs now resolve to the right country** (`backend`,
+  issue #60 root cause): on a dual-stack listener Express can surface the client
+  IP as an IPv4-mapped IPv6 address. `geoip-lite` unwraps the dotted form
+  (`::ffff:1.2.3.4`) but not the hex form (`::ffff:0102:0304`), looking the
+  latter up in the IPv6 table and returning the wrong country. `normalizeIp()`
+  unwraps a mapped address to plain IPv4 (via `ipaddr.js`) before the GeoIP
+  lookup and the datacenter and Tor checks.
+
+### Added
+- **`geoip_data_version` in `geo_analysis`** (`backend`, `shared`): records the
+  pinned `geoip-lite` version so a reviewer can tell which GeoIP data snapshot
+  answered a lookup. Absent on verifications created before this field shipped.
+
 ## [1.12.38] - 2026-10-20
 
 ### Fixed

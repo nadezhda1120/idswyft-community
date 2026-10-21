@@ -34,6 +34,18 @@ describe('analyzeGeoRisk', () => {
     expect(result.is_datacenter).toBe(false);
     expect(result.flags).toEqual([]);
     expect(result.score).toBe(0);
+    // Data vintage is reported even when there is no IP to look up
+    expect(result).toHaveProperty('geoip_data_version');
+  });
+
+  it('reports the geoip-lite data version (snapshot vintage) in the result (issue #60)', async () => {
+    mockLookup.mockReturnValue({ country: 'US', region: '', city: '' });
+
+    const result = await analyzeGeoRisk('8.8.8.8', 'US');
+
+    // The pinned geoip-lite version identifies the bundled data snapshot
+    expect(typeof result.geoip_data_version).toBe('string');
+    expect(result.geoip_data_version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   it('returns valid geo data for a known public IP', async () => {
@@ -183,6 +195,31 @@ describe('analyzeGeoRisk', () => {
     expect(result.flags).toContain('high_risk_country');
     // Score = max(country_mismatch=70, datacenter_ip=50, high_risk_country=40) = 70
     expect(result.score).toBe(70);
+  });
+
+  it('unwraps IPv4-mapped IPv6 before lookup so mapped forms resolve (issue #60)', async () => {
+    mockLookup.mockReturnValue({ country: 'US', region: 'GA', city: 'Atlanta' });
+
+    // hex-compressed IPv4-mapped form of 162.245.68.1 — geoip-lite mishandles
+    // this form directly, so analyzeGeoRisk must unwrap it first
+    await analyzeGeoRisk('::ffff:a2f5:4401', 'US');
+    expect(mockLookup).toHaveBeenCalledWith('162.245.68.1');
+
+    mockLookup.mockClear();
+    await analyzeGeoRisk('::ffff:162.245.68.1', 'US'); // dotted mapped form
+    expect(mockLookup).toHaveBeenCalledWith('162.245.68.1');
+
+    mockLookup.mockClear();
+    await analyzeGeoRisk('162.245.68.1', 'US'); // plain IPv4 passes through
+    expect(mockLookup).toHaveBeenCalledWith('162.245.68.1');
+  });
+
+  it('detects a datacenter IP given in IPv4-mapped form', async () => {
+    mockLookup.mockReturnValue({ country: 'US', region: '', city: '' });
+
+    const result = await analyzeGeoRisk('::ffff:52.1.2.3', 'US'); // AWS 52.x, mapped
+    expect(result.is_datacenter).toBe(true);
+    expect(result.flags).toContain('datacenter_ip');
   });
 });
 
