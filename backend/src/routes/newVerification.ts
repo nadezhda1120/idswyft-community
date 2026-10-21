@@ -44,7 +44,7 @@ import { createAMLProviders } from '@/providers/aml/index.js';
 import { screenAll } from '@/providers/aml/multiScreen.js';
 import { computeRiskScore } from '@/services/riskScoring.js';
 import { analyzeVelocity } from '@/services/velocityAnalysis.js';
-import { analyzeGeoRisk } from '@/services/geoAnalysis.js';
+import { analyzeGeoRisk, routingGeoFlags } from '@/services/geoAnalysis.js';
 import { recordApplicantIp } from '@/services/applicantIp.js';
 import { broadcastStatusChange } from '@/services/realtime.js';
 import { saveSessionState, loadSessionState } from '@/services/sessionPersistence.js';
@@ -1844,7 +1844,9 @@ router.post('/:verification_id/live-capture',
         // Consolidate review reasons so later writes don't overwrite earlier ones
         const reviewReasons: string[] = [];
         if (velocityResult.flags.length > 0) reviewReasons.push(`Velocity flags: ${velocityResult.flags.join(', ')}`);
-        if (geoResult.flags.length > 0) reviewReasons.push(`Geo flags: ${geoResult.flags.join(', ')}`);
+        // country_mismatch is informational only — it never routes to review (issue #60)
+        const geoReviewFlags = routingGeoFlags(geoResult.flags);
+        if (geoReviewFlags.length > 0) reviewReasons.push(`Geo flags: ${geoReviewFlags.join(', ')}`);
         if (reviewReasons.length > 0) {
           await supabase.from('verification_requests').update({
             manual_review_reason: reviewReasons.join('; '),
@@ -1888,7 +1890,7 @@ router.post('/:verification_id/live-capture',
     const state = session.getState();
     let dbStatus: string;
     const hasVelocityFlags = (state.velocity_analysis?.flags?.length ?? 0) > 0;
-    const hasGeoFlags = (state.geo_analysis?.flags?.length ?? 0) > 0;
+    const hasGeoFlags = routingGeoFlags(state.geo_analysis?.flags ?? []).length > 0;
     const needsManualReview = state.cross_validation?.verdict === 'REVIEW'
       || !!state.face_match?.skipped_reason
       || complianceForceReview
@@ -1987,7 +1989,7 @@ router.post('/:verification_id/live-capture',
           : hasVelocityFlags
             ? `Velocity flags: ${state.velocity_analysis!.flags.join(', ')}`
             : hasGeoFlags
-              ? `Geo flags: ${state.geo_analysis!.flags.join(', ')}`
+              ? `Geo flags: ${routingGeoFlags(state.geo_analysis!.flags).join(', ')}`
               : null,
       ...(liveDedupBlocked && { final_result: 'failed' }),
       ...(liveDedupFlags.length > 0 && { duplicate_flags: liveDedupFlags }),

@@ -16,7 +16,7 @@ vi.mock('geoip-lite', () => ({
 }));
 
 // Must import AFTER vi.mock
-const { analyzeGeoRisk } = await import('../geoAnalysis.js');
+const { analyzeGeoRisk, routingGeoFlags } = await import('../geoAnalysis.js');
 
 describe('analyzeGeoRisk', () => {
   beforeEach(() => {
@@ -183,5 +183,43 @@ describe('analyzeGeoRisk', () => {
     expect(result.flags).toContain('high_risk_country');
     // Score = max(country_mismatch=70, datacenter_ip=50, high_risk_country=40) = 70
     expect(result.score).toBe(70);
+  });
+});
+
+describe('routingGeoFlags', () => {
+  it('drops country_mismatch so it never routes to review on its own (issue #60)', () => {
+    expect(routingGeoFlags(['country_mismatch'])).toEqual([]);
+  });
+
+  it('a co-occurring stronger flag still routes; country_mismatch is still dropped', () => {
+    expect(routingGeoFlags(['country_mismatch', 'datacenter_ip'])).toEqual(['datacenter_ip']);
+    expect(routingGeoFlags(['country_mismatch', 'tor_exit_node'])).toEqual(['tor_exit_node']);
+  });
+
+  it('routes tor_exit_node, datacenter_ip and high_risk_country on their own', () => {
+    expect(routingGeoFlags(['tor_exit_node'])).toEqual(['tor_exit_node']);
+    expect(routingGeoFlags(['datacenter_ip'])).toEqual(['datacenter_ip']);
+    expect(routingGeoFlags(['high_risk_country'])).toEqual(['high_risk_country']);
+  });
+
+  it('returns an empty set when there are no flags', () => {
+    expect(routingGeoFlags([])).toEqual([]);
+  });
+
+  it('does not mutate the input array', () => {
+    const flags: Array<'country_mismatch' | 'datacenter_ip'> = ['country_mismatch', 'datacenter_ip'];
+    routingGeoFlags(flags);
+    expect(flags).toEqual(['country_mismatch', 'datacenter_ip']);
+  });
+
+  it('leaves analyzeGeoRisk output intact — country_mismatch still in flags and score', async () => {
+    mockLookup.mockReturnValue({ country: 'NG', region: '', city: '' });
+    const result = await analyzeGeoRisk('41.58.1.1', 'US');
+
+    // The informational flag and its score are preserved for reviewers
+    expect(result.flags).toContain('country_mismatch');
+    expect(result.score).toBe(70);
+    // But it does not survive the routing filter
+    expect(routingGeoFlags(result.flags)).toEqual([]);
   });
 });

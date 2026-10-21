@@ -6,6 +6,7 @@
 import { supabase } from '@/config/database.js';
 import { VerificationStatus, FLOW_PRESETS } from '@idswyft/shared';
 import type { SessionState, FlowConfig, VerificationMode } from '@idswyft/shared';
+import { routingGeoFlags } from '@/services/geoAnalysis.js';
 
 /** Load session state from verification_contexts table */
 export async function loadSessionState(verificationId: string): Promise<SessionState | null> {
@@ -163,6 +164,9 @@ export function buildVerificationResponse(input: VerificationResponseInput) {
   const flow = input.flow ?? FLOW_PRESETS.full;
   const mapped = mapStatusForResponse(state, flow);
   const isAgeOnly = flow.preset === 'age_only';
+  // country_mismatch is informational only — it never routes to review (issue #60),
+  // so it must not surface as a review reason either.
+  const geoReviewFlags = routingGeoFlags(state.geo_analysis?.flags ?? []);
 
   return {
     success: true,
@@ -207,7 +211,7 @@ export function buildVerificationResponse(input: VerificationResponseInput) {
       || (state.cross_validation?.verdict === 'REVIEW' ? 'Cross-validation requires review' : null)
       || (state.face_match?.skipped_reason ? `Face match skipped: ${state.face_match.skipped_reason}` : null)
       || ((state.velocity_analysis?.flags?.length ?? 0) > 0 ? `Velocity flags: ${state.velocity_analysis!.flags.join(', ')}` : null)
-      || ((state.geo_analysis?.flags?.length ?? 0) > 0 ? `Geo flags: ${state.geo_analysis!.flags.join(', ')}` : null),
+      || (geoReviewFlags.length > 0 ? `Geo flags: ${geoReviewFlags.join(', ')}` : null),
     ...(mapped.final_result === 'failed' && {
       retry_available: (verification.retry_count ?? 0) < 3,
       retry_count: verification.retry_count ?? 0,
