@@ -17,6 +17,7 @@
 
 import { createRequire } from 'node:module';
 import geoip from 'geoip-lite';
+import ipaddr from 'ipaddr.js';
 import { logger } from '@/utils/logger.js';
 import type { GeoAnalysisResult, GeoRiskFlag } from '@idswyft/shared';
 
@@ -162,6 +163,29 @@ function isDatacenterIp(ip: string): boolean {
 }
 
 /**
+ * Normalize an IPv4-mapped IPv6 address to its plain IPv4 form.
+ *
+ * Express can surface the client IP as an IPv4-mapped IPv6 address on a
+ * dual-stack listener. geoip-lite unwraps the dotted form (::ffff:1.2.3.4) but
+ * not the hex form (::ffff:0102:0304): it looks the hex form up in the IPv6
+ * table and returns the wrong country (issue #60). The datacenter prefix check
+ * and the Tor set match the literal string, so they miss both mapped forms.
+ * Unwrap once here so every downstream check sees the real IPv4.
+ */
+function normalizeIp(ip: string): string {
+  try {
+    if (!ipaddr.isValid(ip)) return ip;
+    const addr = ipaddr.parse(ip);
+    if (addr instanceof ipaddr.IPv6 && addr.isIPv4MappedAddress()) {
+      return addr.toIPv4Address().toString();
+    }
+  } catch {
+    // Unparseable — leave as-is; the lookup returns null and no flag fires.
+  }
+  return ip;
+}
+
+/**
  * Analyze IP geolocation risk for a verification session.
  *
  * @param clientIp - IP address captured at initialization
@@ -188,8 +212,11 @@ export async function analyzeGeoRisk(
     };
   }
 
+  // Unwrap IPv4-mapped IPv6 before every lookup (issue #60)
+  const ip = normalizeIp(clientIp);
+
   // ── GeoIP lookup ──────────────────────────────────────────────
-  const geo = geoip.lookup(clientIp);
+  const geo = geoip.lookup(ip);
   const ipCountry = geo?.country ?? null;
   const ipRegion = geo?.region ?? null;
   const ipCity = geo?.city ?? null;
@@ -200,13 +227,13 @@ export async function analyzeGeoRisk(
   }
 
   // ── Tor exit node ─────────────────────────────────────────────
-  const isTor = isTorExitNode(clientIp);
+  const isTor = isTorExitNode(ip);
   if (isTor) {
     flags.push('tor_exit_node');
   }
 
   // ── Datacenter/VPN ────────────────────────────────────────────
-  const isDatacenter = isDatacenterIp(clientIp);
+  const isDatacenter = isDatacenterIp(ip);
   if (isDatacenter) {
     flags.push('datacenter_ip');
   }
