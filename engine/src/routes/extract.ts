@@ -27,6 +27,7 @@ import {
   SharpTamperDetector, DocumentZoneValidator,
   createDeepfakeDetector,
   crossCheckBulgarianMrz,
+  formatBulgarianDocument,
 } from '@idswyft/shared';
 import type {
   HeadTurnLivenessMetadata,
@@ -223,9 +224,11 @@ router.post('/front', upload.single('file'), async (req: Request, res: Response)
 
     // 3. MRZ detection on front document
     let mrzFromFront: string[] | null = null;
+    let frontMrz: ReturnType<typeof extractMRZFromText> = null;
     let detectedCountry = issuingCountry || null;
     if (ocrData?.raw_text) {
       const mrzResult = extractMRZFromText(ocrData.raw_text);
+      frontMrz = mrzResult;
       if (mrzResult) {
         mrzFromFront = mrzResult.raw_lines;
 
@@ -335,7 +338,13 @@ router.post('/front', upload.single('file'), async (req: Request, res: Response)
       faceDetected: faceConfidence > 0,
     });
 
-    res.json({ success: true, result });
+    // Bulgarian documents get a readable, grouped summary first in the response;
+    // ?view=document returns only that summary.
+    const document = (detectedCountry || '').toUpperCase() === 'BG' && ocrData
+      ? formatBulgarianDocument(ocrData, frontMrz)
+      : undefined;
+    if (document && req.query.view === 'document') return res.json({ success: true, document });
+    res.json({ success: true, ...(document ? { document } : {}), result });
   } catch (error) {
     logger.error('Front extraction failed', {
       error: error instanceof Error ? error.message : String(error),
@@ -469,7 +478,9 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
       hasMrz,
     });
 
-    res.json({ success: true, result });
+    const document = backOcr ? formatBulgarianDocument(backOcr, mrzResult) : undefined;
+    if (document && req.query.view === 'document') return res.json({ success: true, document });
+    res.json({ success: true, ...(document ? { document } : {}), result });
   } catch (error) {
     logger.error('Back extraction failed', {
       error: error instanceof Error ? error.message : String(error),

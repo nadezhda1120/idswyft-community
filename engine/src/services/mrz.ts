@@ -80,7 +80,7 @@ export function detectMRZInText(rawText: string): string[] | null {
  */
 export function parseMRZLines(lines: string[]): MRZParseResult | null {
   try {
-    const result: ParseResult = parseMRZ(lines, { autocorrect: true });
+    const result: ParseResult = bestDocumentNumberVariant(lines, parseMRZ(lines, { autocorrect: true }));
 
     const fields = result.fields;
 
@@ -110,6 +110,42 @@ export function parseMRZLines(lines: string[]): MRZParseResult | null {
     });
     return null;
   }
+}
+
+/**
+ * OCR often confuses O and 0 in the document number, which the `mrz` autocorrect
+ * cannot fix because document numbers may contain letters (e.g. Bulgarian
+ * "AA0O00OO0"). When the check digits fail, try every O/0 combination in the
+ * document number field and keep the variant with the most valid check digits.
+ * Deterministic: the check digits decide, never a guess.
+ */
+function bestDocumentNumberVariant(lines: string[], original: ParseResult): ParseResult {
+  if (original.valid) return original;
+  const row = lines.length === 3 ? 0 : 1;   // TD1: line 1, TD2/TD3: line 2
+  const start = lines.length === 3 ? 5 : 0;
+  const line = lines[row] ?? '';
+  const positions = [...line.slice(start, start + 9)]
+    .map((c, i) => (c === 'O' || c === '0' ? start + i : -1))
+    .filter(i => i >= 0)
+    .slice(0, 8);
+  if (positions.length === 0) return original;
+
+  const validCount = (r: ParseResult) => r.details.filter(d => d.valid).length;
+  let best = original;
+  for (let mask = 0; mask < 1 << positions.length; mask++) {
+    const chars = [...line];
+    positions.forEach((p, bit) => { chars[p] = mask & (1 << bit) ? 'O' : '0'; });
+    const candidate = chars.join('');
+    if (candidate === line) continue;
+    try {
+      const variant = [...lines];
+      variant[row] = candidate;
+      const parsed = parseMRZ(variant, { autocorrect: true });
+      if (validCount(parsed) > validCount(best)) best = parsed;
+      if (best.valid) break;
+    } catch { /* variant not parseable */ }
+  }
+  return best;
 }
 
 /**

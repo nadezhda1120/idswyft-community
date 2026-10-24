@@ -10,3 +10,5 @@ export {
   parseBgDate, parseBgDocumentNumber, crossCheckBulgarianMrz,
 } from './BulgarianExtractor.js';
 export type { BgOcrLine, BgLayout, BgExtraction, BgDocumentKind, BgMrzFields } from './BulgarianExtractor.js';
+export { formatBulgarianDocument } from './format.js';
+export type { BgMrzSummaryInput } from './format.js';

@@ -20,6 +20,8 @@ import { configureSharedLogger } from '@idswyft/shared';
 import extractRouter from '@/routes/extract.js';
 
 const app = express();
+// Indented JSON: responses are meant to be read by people testing the engine too.
+app.set('json spaces', 2);
 
 // Wire shared-package logger to engine's logger instance
 configureSharedLogger(logger);

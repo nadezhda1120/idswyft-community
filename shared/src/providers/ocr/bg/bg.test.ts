@@ -92,7 +92,7 @@ describe('extractBulgarianDocument — ID card front (2010 layout)', () => {
     line('Пол/Sex Ж/F'),
     line('ЕГН/Personal No 9508010139'),
     line('Валидност/Date of expiry 17.06.2034'),
-    line('№ на документа/Document number АА1234567'),
+    line('№ на документа/Document number 643123456'),
   ]
 
   it('identifies the layout', () => {
@@ -112,7 +112,7 @@ describe('extractBulgarianDocument — ID card front (2010 layout)', () => {
       date_of_birth: '1995-08-01', sex: 'F',
       personal_number: '9508010139', personal_number_valid: true,
       personal_number_matches_dob: true, personal_number_matches_sex: true,
-      expiration_date: '2034-06-17', document_number: 'AA1234567',
+      expiration_date: '2034-06-17', document_number: '643123456',
     })
   })
 
@@ -163,7 +163,8 @@ describe('extractBulgarianDocument — ID card back', () => {
     expect(layout.side).toBe('back')
     expect(fields).toMatchObject({
       place_of_birth: 'СОФИЯ', place_of_birth_latin: 'SOFIA',
-      issuing_authority: 'МВР/MoI BGR', issue_date: '2024-06-17',
+      issuing_authority: 'МВР', issuing_authority_latin: 'MoI BGR', issue_date: '2024-06-17',
+      height: '168', eye_color: 'BROWN', eye_color_cyrillic: 'КАФЯВИ',
     })
     expect(fields.address).toContain('СТОЛИЧНА')
   })

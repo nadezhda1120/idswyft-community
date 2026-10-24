@@ -66,9 +66,9 @@ export {
   transliterateBulgarian, hasCyrillic, foldLatinLookalikes, foldCyrillicLookalikes,
   parseEgn, normalizeEgn, egnChecksumValid, egnBirthDate, egnSex, findEgnInText,
   extractBulgarianDocument, applyBulgarianExtraction, identifyBulgarianLayout,
-  parseBgDate, parseBgDocumentNumber, crossCheckBulgarianMrz,
+  parseBgDate, parseBgDocumentNumber, crossCheckBulgarianMrz, formatBulgarianDocument,
 } from './providers/ocr/bg/index.js';
-export type { EgnInfo, BgOcrLine, BgLayout, BgExtraction, BgDocumentKind, BgMrzFields } from './providers/ocr/bg/index.js';
+export type { EgnInfo, BgOcrLine, BgLayout, BgExtraction, BgDocumentKind, BgMrzFields, BgMrzSummaryInput } from './providers/ocr/bg/index.js';
 
 // Verification models
 export {
