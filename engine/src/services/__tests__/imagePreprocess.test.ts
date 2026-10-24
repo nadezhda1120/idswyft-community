@@ -50,9 +50,18 @@ describe('detectCard + warpCard', () => {
     expect(meta.width!).toBeGreaterThan(CARD_W * 0.9)
   })
 
-  it('leaves a full-frame scan alone', async () => {
+  it('leaves a full-frame scan alone, also when it is dark', async () => {
     const scan = await sharp(cardSvg()).png().toBuffer()
     expect(await detectCard(scan)).toBeNull()
+    const dark = await sharp(cardSvg()).linear(0.45, 0).png().toBuffer()
+    expect(await detectCard(dark)).toBeNull()
+  })
+
+  it('does not stretch contrast or equalise a clean card', async () => {
+    const out = await preprocessForOcr(await sharp(cardSvg()).png().toBuffer())
+    expect(out.steps).not.toContain('contrast_stretched')
+    expect(out.steps).not.toContain('lighting_equalised')
+    expect(out.steps).not.toContain('card_cropped_and_unwarped')
   })
 })
 
@@ -88,14 +97,15 @@ describe('preprocessForOcr', () => {
     expect(out.steps.some(s => s.startsWith('upscaled'))).toBe(true)
     expect(out.card_corners).toHaveLength(4)
     const meta = await sharp(out.buffer).metadata()
-    // The crop is ~265 px tall; upscaling is capped at 3×.
-    expect(Math.min(meta.width!, meta.height!)).toBeGreaterThan(750)
+    // The crop is ~265 px tall; upscaling is capped at 2×.
+    expect(Math.min(meta.width!, meta.height!)).toBeGreaterThan(500)
+    expect(out.steps).toContain('contrast_stretched')
   })
 
   it('passes the upload through when disabled', async () => {
     const img = await photo(0)
     const out = await preprocessForOcr(img, {
-      enabled: false, crop: true, enhance: 'auto', minShortSide: 900, blurMin: 40, glareMax: 0.03,
+      enabled: false, crop: true, enhance: 'auto', minShortSide: 640, blurMin: 40, glareMax: 0.12,
     })
     expect(out.steps).toEqual([])
     expect(out.card_corners).toBeNull()

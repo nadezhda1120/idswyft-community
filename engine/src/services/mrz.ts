@@ -37,6 +37,21 @@ export interface MRZParseResult {
 const MRZ_LINE_LENGTHS = new Set([30, 36, 44]);
 
 /**
+ * OCR often reads one filler too many or too few at the end of an MRZ line
+ * ("IDBGRAA0O00OO00<<<<<<<<<<<<<<<<" — 31 chars). A line within one character of a
+ * valid length that ends in fillers is trimmed / padded to that length; the
+ * check digits still decide whether the result is accepted.
+ */
+function fitMrzLength(line: string): string {
+  if (MRZ_LINE_LENGTHS.has(line.length) || !/^[A-Z0-9<]+$/.test(line)) return line;
+  for (const len of MRZ_LINE_LENGTHS) {
+    if (line.length === len + 1 && line.endsWith('<<')) return line.slice(0, len);
+    if (line.length === len - 1 && line.endsWith('<')) return line + '<';
+  }
+  return line;
+}
+
+/**
  * Detect MRZ-like lines in raw OCR text.
  * MRZ lines consist of uppercase letters, digits, and `<` filler characters.
  * Returns the detected lines grouped by line length, or null if none found.
@@ -49,7 +64,7 @@ export function detectMRZInText(rawText: string): string[] | null {
 
   for (const line of lines) {
     // MRZ lines: uppercase letters, digits, and < filler only
-    const cleaned = line.replace(/\s/g, '');
+    const cleaned = fitMrzLength(line.replace(/\s/g, ''));
     if (cleaned.length >= 30 && /^[A-Z0-9<]+$/.test(cleaned) && MRZ_LINE_LENGTHS.has(cleaned.length)) {
       mrzCandidates.push(cleaned);
     }
@@ -124,10 +139,11 @@ function bestDocumentNumberVariant(lines: string[], original: ParseResult): Pars
   const row = lines.length === 3 ? 0 : 1;   // TD1: line 1, TD2/TD3: line 2
   const start = lines.length === 3 ? 5 : 0;
   const line = lines[row] ?? '';
-  const positions = [...line.slice(start, start + 9)]
+  // The 9-character number and its check digit (a check digit is always numeric).
+  const positions = [...line.slice(start, start + 10)]
     .map((c, i) => (c === 'O' || c === '0' ? start + i : -1))
     .filter(i => i >= 0)
-    .slice(0, 8);
+    .slice(0, 10);
   if (positions.length === 0) return original;
 
   const validCount = (r: ParseResult) => r.details.filter(d => d.valid).length;

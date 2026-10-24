@@ -461,7 +461,7 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
     // Bulgarian cards have no PDF417: what the scanner "decoded" there is OCR text,
     // so a checksum-valid MRZ takes over.
     const preferMrz = isBulgarian && !!mrzResult?.check_digits_valid;
-    if (preferMrz) barcodeFormat = null;
+    if (isBulgarian) barcodeFormat = null;
     if ((!qrPayload || preferMrz) && mrzResult && mrzResult.fields) {
       finalQrPayload = {
         first_name: mrzResult.fields.first_name || '',
@@ -486,14 +486,16 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
       checksums_valid: mrzResult!.check_digits_valid,
     } : (rawText && /[A-Z<]{30,}/.test(rawText) ? {
       raw_lines: rawText.split('\n').filter((l: string) => /^[A-Z0-9<]{30,}$/.test(l.trim())),
-      checksums_valid: true,
+      // Unparsed MRZ-like text: Bulgarian cards always carry a parseable TD1, so an
+      // unparsed one there is a misread, not a pass.
+      checksums_valid: !isBulgarian,
     } : null);
 
     const result: BackExtractionResult & { ocr?: Record<string, any> } = {
       qr_payload: finalQrPayload,
       mrz_result: mrzForGate,
       barcode_format: barcodeFormat,
-      raw_barcode_data: preferMrz ? null : (barcodeData?.pdf417_data?.raw_data || barcodeData?.barcode_data || null),
+      raw_barcode_data: isBulgarian ? null : (barcodeData?.pdf417_data?.raw_data || barcodeData?.barcode_data || null),
       ...(backOcr ? { ocr: backOcr } : {}),
     };
 
