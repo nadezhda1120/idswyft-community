@@ -12,7 +12,7 @@ import {
 } from '@idswyft/shared';
 import { logger } from '@/utils/logger.js';
 import {
-  type OcrScript, getOcrModelPaths, scriptForCountry, looksBulgarian,
+  type OcrScript, getOcrModelPaths, getOcrDetectionOptions, scriptForCountry, looksBulgarian,
 } from '@/config/ocrModels.js';
 
 // ── Types ─────────────────────────────────────────────────────
@@ -308,9 +308,11 @@ export class PaddleOCRProvider implements OCRProvider {
           script,
           customDetection: !!model.detection,
           customRecognition: !!model.recognition,
+          detection: getOcrDetectionOptions(),
         });
         try {
-          const svc = new PaddleOcrService({ model, debugging: { verbose: false } });
+          const detection = getOcrDetectionOptions();
+          const svc = new PaddleOcrService({ model, detection, debugging: { verbose: false } });
           await svc.initialize();
           this.services.set(script, svc);
           logger.info('PaddleOCRProvider: ready', { script });

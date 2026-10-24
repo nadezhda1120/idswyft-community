@@ -14,6 +14,14 @@
  *                               (default: bundled PP-OCRv5 cyrillic model, else downloaded)
  *   OCR_CYRILLIC_ENABLED=false  never switch to the Cyrillic model
  *   OCR_DEFAULT_SCRIPT          script used when no issuing country is known (latin | cyrillic)
+ *
+ * Text detection (see getOcrDetectionOptions):
+ *   OCR_DET_MAX_SIDE            longest side the detector sees, px (default 960; library default 640
+ *                               merges neighbouring rows on ID cards)
+ *   OCR_DET_AUTO_DESKEW         straighten slightly rotated text before recognition (default true)
+ *   OCR_DET_PADDING_V / OCR_DET_PADDING_H
+ *                               box padding as a fraction of box height (defaults 0.4 / 0.6)
+ *   OCR_DET_MIN_AREA            drop detected boxes smaller than this, px² (default 25)
  */
 
 import fs from 'fs';
@@ -85,4 +93,29 @@ export function getOcrModelPaths(script: OcrScript): OcrModelPaths {
  */
 export function looksBulgarian(text: string): boolean {
   return /REPUBLIC\s*OF\s*BULGARIA|\bBULGARIA\b|^[IP][A-Z<]BGR|\bBGR\b/im.test(text ?? '');
+}
+
+export interface OcrDetectionOptions {
+  maxSideLength: number;
+  autoDeskew: boolean;
+  paddingVertical: number;
+  paddingHorizontal: number;
+  minimumAreaThreshold: number;
+}
+
+function envNumber(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name];
+  const n = raw === undefined || raw === '' ? NaN : Number(raw);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
+
+/** Detection parameters for PaddleOCR, from the environment (same for every script). */
+export function getOcrDetectionOptions(): OcrDetectionOptions {
+  return {
+    maxSideLength: envNumber('OCR_DET_MAX_SIDE', 960, 320, 4096),
+    autoDeskew: process.env.OCR_DET_AUTO_DESKEW !== 'false',
+    paddingVertical: envNumber('OCR_DET_PADDING_V', 0.4, 0, 2),
+    paddingHorizontal: envNumber('OCR_DET_PADDING_H', 0.6, 0, 2),
+    minimumAreaThreshold: envNumber('OCR_DET_MIN_AREA', 25, 0, 10000),
+  };
 }
