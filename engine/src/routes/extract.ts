@@ -36,6 +36,7 @@ import type {
 } from '@idswyft/shared';
 import { getLivenessThresholdSync } from '@/config/verificationThresholds.js';
 import { looksBulgarian } from '@/config/ocrModels.js';
+import { preprocessForOcr, type PreprocessResult } from '@/services/imagePreprocess.js';
 import { decodeAudioToFloat32 } from '@/services/audioDecoder.js';
 import { extractSpeakerEmbedding } from '@/services/voiceSpeaker.js';
 import { transcribeAudio } from '@/services/voiceRecognition.js';
@@ -103,46 +104,46 @@ const ORIENTATION_GOOD_ENOUGH = 8;
 
 interface OrientedExtraction {
   ocr: any;
+  /** The upload, EXIF- and orientation-corrected but otherwise untouched: for face and tamper analysis. */
   buffer: Buffer;
   angle: number;
   score: number;
+  preprocessing: Pick<PreprocessResult, 'steps' | 'quality' | 'card_corners'>;
 }
 
 /**
  * Run OCR, correcting page orientation when the image is rotated.
  *
- * EXIF orientation is honoured first, but phone cameras frequently write no such tag,
- * so the upright result is scored and, if weak, the remaining 90° rotations are tried.
- * The winning buffer is returned and reused for face detection and tamper analysis —
- * those fail on a sideways image just as OCR does.
+ * The upload is first preprocessed for OCR (EXIF orientation, card crop with
+ * perspective correction, upscaling, lighting normalisation — see imagePreprocess).
+ * Phone cameras frequently write no EXIF orientation, so the upright result is
+ * scored and, if weak, the remaining 90° rotations are tried.
+ *
+ * Face detection and tamper analysis get the original upload rotated by the same
+ * angle, never the enhanced OCR image: tamper analysis must see the real pixels.
  *
  * Cost: a single OCR pass in the common case thanks to the early exit; at most four
  * on the failure path, which is far cheaper than rejecting a valid document.
  */
 async function extractWithOrientation(
-  original: Buffer,
+  upload: Buffer,
   documentType: string,
   issuingCountry: string | undefined,
   llmConfig: LLMProviderConfig | undefined,
 ): Promise<OrientedExtraction> {
-  let base = original;
-  try {
-    // sharp().rotate() with no argument applies the EXIF orientation tag, if present
-    base = await sharp(original).rotate().toBuffer();
-  } catch {
-    base = original;
-  }
+  const pre = await preprocessForOcr(upload);
+  const preprocessing = { steps: pre.steps, quality: pre.quality, card_corners: pre.card_corners };
 
   // 270° first among the rotations: portrait photos of landscape documents are the
   // common real-world case and land here.
   const angles = [0, 270, 90, 180];
-  let best: OrientedExtraction | null = null;
+  let best: Omit<OrientedExtraction, 'buffer' | 'preprocessing'> | null = null;
 
   for (const angle of angles) {
-    let candidate = base;
+    let candidate = pre.buffer;
     if (angle !== 0) {
       try {
-        candidate = await sharp(base).rotate(angle).toBuffer();
+        candidate = await sharp(pre.buffer).rotate(angle).toBuffer();
       } catch {
         continue;
       }
@@ -156,7 +157,7 @@ async function extractWithOrientation(
     }
 
     const score = scoreExtraction(ocr);
-    if (!best || score > best.score) best = { ocr, buffer: candidate, angle, score };
+    if (!best || score > best.score) best = { ocr, angle, score };
     if (score >= ORIENTATION_GOOD_ENOUGH) break;
   }
 
@@ -165,8 +166,16 @@ async function extractWithOrientation(
       rotatedBy: best.angle, score: Number(best.score.toFixed(2)),
     });
   }
+  if (pre.steps.length || pre.quality.issues.length) {
+    logger.info('OCR preprocessing', { steps: pre.steps, issues: pre.quality.issues });
+  }
 
-  return best ?? { ocr: null, buffer: base, angle: 0, score: 0 };
+  const angle = best?.angle ?? 0;
+  let buffer = pre.original;
+  if (angle !== 0) {
+    try { buffer = await sharp(pre.original).rotate(angle).toBuffer(); } catch { /* keep upright */ }
+  }
+  return { ocr: best?.ocr ?? null, buffer, angle, score: best?.score ?? 0, preprocessing };
 }
 
 // ─── POST /extract/front ─────────────────────────────────────────
@@ -339,6 +348,10 @@ router.post('/front', upload.single('file'), async (req: Request, res: Response)
       faceDetected: faceConfidence > 0,
     });
 
+    // Image quality and the preprocessing applied before OCR (information only)
+    const imageQuality = { ...oriented.preprocessing.quality, preprocessing: oriented.preprocessing.steps, rotated_by: oriented.angle };
+    if (ocrData) ocrData.image_quality = imageQuality;
+
     // Bulgarian documents get a readable, grouped summary first in the response;
     // ?view=document returns only that summary.
     // ocrData.issuing_country is 'BG' also when the card was auto-detected as Bulgarian.
@@ -422,7 +435,9 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
     let backOcr: Record<string, any> | null = null;
     if (isBulgarian) {
       try {
-        backOcr = await ocrService.processDocumentFromBuffer(imageBuffer, 'national_id', 'BG');
+        const pre = await preprocessForOcr(imageBuffer);
+        backOcr = await ocrService.processDocumentFromBuffer(pre.buffer, 'national_id', 'BG');
+        if (backOcr) backOcr.image_quality = { ...pre.quality, preprocessing: pre.steps };
         // Prefer the Cyrillic read's MRZ unless the barcode scanner already has a valid one.
         if (!mrzResult?.check_digits_valid && backOcr?.raw_text) {
           const paddleMrz = extractMRZFromText(backOcr.raw_text);
