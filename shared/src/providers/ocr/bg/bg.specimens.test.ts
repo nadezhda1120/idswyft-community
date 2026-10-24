@@ -182,7 +182,7 @@ describe('formatBulgarianDocument', () => {
         full_name: { cyrillic: 'СЛАВИНА ГЕОРГИЕВА ИВАНОВА', latin: 'SLAVINA GEORGIEVA IVANOVA' },
         surname: { cyrillic: 'ИВАНОВА', latin: 'IVANOVA' },
         father_name: { cyrillic: 'ГЕОРГИЕВА', latin: 'GEORGIEVA' },
-        personal_number: { number: '9508010133', checksum_valid: false },
+        personal_number: { number: '9508010133', type: 'egn', checksum_valid: false },
         date_of_birth: '1995-08-01', sex: 'F',
         nationality: { code: 'BGR', cyrillic: 'БЪЛГАРИЯ' },
       },
@@ -203,5 +203,20 @@ describe('formatBulgarianDocument — MRZ block', () => {
     })
     expect(doc.mrz).toMatchObject({ given_names: 'SLAVINA GEORGIEVA', check_digits_valid: true })
     expect(doc.document).toMatchObject({ issue_date: '2024-06-17', generation: 'id_card_2024' })
+  })
+})
+
+describe('personal number type on ID cards', () => {
+  it('is an ЕГН on a citizen ID card even when the checksum fails or passes ЛНЧ by chance', () => {
+    // 9508010133 fails the ЕГН checksum but happens to pass the ЛНЧ one.
+    expect(extractBulgarianDocument(FRONT_2024).fields.personal_number_type).toBe('egn')
+    expect(extractBulgarianDocument(FRONT_2010).fields.personal_number_type).toBe('egn')
+  })
+
+  it('is set when the number comes from the MRZ on the back', () => {
+    const ocr: Record<string, any> = { raw_text: '' }
+    applyBulgarianExtraction(ocr, extractBulgarianDocument(BACK_2024))
+    crossCheckBulgarianMrz(ocr, { personal_number: '9508010133', last_name: 'IVANOVA' })
+    expect(ocr.personal_number_type).toBe('egn')
   })
 })

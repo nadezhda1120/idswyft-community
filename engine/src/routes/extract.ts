@@ -35,6 +35,7 @@ import type {
   LLMProviderConfig,
 } from '@idswyft/shared';
 import { getLivenessThresholdSync } from '@/config/verificationThresholds.js';
+import { looksBulgarian } from '@/config/ocrModels.js';
 import { decodeAudioToFloat32 } from '@/services/audioDecoder.js';
 import { extractSpeakerEmbedding } from '@/services/voiceSpeaker.js';
 import { transcribeAudio } from '@/services/voiceRecognition.js';
@@ -413,15 +414,19 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
     // printed in Cyrillic, which the barcode scanner's English OCR cannot read.
     // Read the back with PaddleOCR (Cyrillic model) and use its MRZ if Tesseract
     // missed one.
+    // With no country given, the English read of a Bulgarian back still shows the
+    // MRZ prefix ("IDBGR…", fillers often misread as K/L) or Bulgarian keywords.
     const isBulgarian = issuingCountry === 'BG'
-      || (!issuingCountry && mrzResult?.fields.issuing_country === 'BGR');
+      || (!issuingCountry && (mrzResult?.fields.issuing_country === 'BGR'
+        || /I[A-Z<]BGR/.test(rawText.replace(/\s/g, '')) || looksBulgarian(rawText)));
     let backOcr: Record<string, any> | null = null;
     if (isBulgarian) {
       try {
         backOcr = await ocrService.processDocumentFromBuffer(imageBuffer, 'national_id', 'BG');
-        if (!mrzResult && backOcr?.raw_text) {
+        // Prefer the Cyrillic read's MRZ unless the barcode scanner already has a valid one.
+        if (!mrzResult?.check_digits_valid && backOcr?.raw_text) {
           const paddleMrz = extractMRZFromText(backOcr.raw_text);
-          if (paddleMrz) {
+          if (paddleMrz && (!mrzResult || paddleMrz.check_digits_valid)) {
             mrzResult = paddleMrz;
             rawText = backOcr.raw_text;
           }
@@ -438,7 +443,11 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
     let barcodeFormat: 'PDF417' | 'QR_CODE' | 'DATA_MATRIX' | 'CODE_128' | 'MRZ_TD1' | 'MRZ_TD2' | 'MRZ_TD3' | null =
       barcodeData?.pdf417_data ? 'PDF417' : (barcodeData?.barcode_data ? 'QR_CODE' : null);
 
-    if (!qrPayload && mrzResult && mrzResult.fields) {
+    // Bulgarian cards have no PDF417: what the scanner "decoded" there is OCR text,
+    // so a checksum-valid MRZ takes over.
+    const preferMrz = isBulgarian && !!mrzResult?.check_digits_valid;
+    if (preferMrz) barcodeFormat = null;
+    if ((!qrPayload || preferMrz) && mrzResult && mrzResult.fields) {
       finalQrPayload = {
         first_name: mrzResult.fields.first_name || '',
         last_name: mrzResult.fields.last_name || '',
@@ -469,7 +478,7 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
       qr_payload: finalQrPayload,
       mrz_result: mrzForGate,
       barcode_format: barcodeFormat,
-      raw_barcode_data: barcodeData?.pdf417_data?.raw_data || barcodeData?.barcode_data || null,
+      raw_barcode_data: preferMrz ? null : (barcodeData?.pdf417_data?.raw_data || barcodeData?.barcode_data || null),
       ...(backOcr ? { ocr: backOcr } : {}),
     };
 

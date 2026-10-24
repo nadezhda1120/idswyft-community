@@ -474,6 +474,17 @@ const EYE_COLOURS: Record<string, string> = {
   ЛЕШНИКОВИ: 'HAZEL', 'СИНЬО-ЗЕЛЕНИ': 'BLUE-GREEN', 'СИВО-СИНИ': 'GREY-BLUE',
 };
 
+/**
+ * ЕГН or ЛНЧ. Bulgarian ID cards and passports are issued to citizens only, so their
+ * personal number is an ЕГН even when its checksum fails (a misread or a specimen) —
+ * passing the ЛНЧ checksum by chance must not relabel it. Other documents (residence
+ * permits) are classified by checksum.
+ */
+function personalNumberType(value: string, document: BgDocumentKind, nationality: unknown): 'egn' | 'lnch' | 'unknown' {
+  if (document === 'id_card' || document === 'passport' || nationality === 'BGR') return 'egn';
+  return classifyPersonalNumber(value);
+}
+
 // ── EU numbered fields (driving licence) ──────────────────────
 
 function numberedFields(lines: BgOcrLine[]): Map<string, Found[]> {
@@ -689,8 +700,7 @@ export function extractBulgarianDocument(rawLines: BgOcrLine[], documentTypeHint
   if (typeof fields.personal_number === 'string') {
     const info = parseEgn(fields.personal_number);
     fields.personal_number_valid = info.valid;
-    // Residence permits carry a foreigner's ЛНЧ instead of an ЕГН.
-    fields.personal_number_type = classifyPersonalNumber(fields.personal_number);
+    fields.personal_number_type = personalNumberType(fields.personal_number, layout.document, fields.nationality);
     if (!fields.date_of_birth && info.valid && info.date_of_birth) set('date_of_birth', info.date_of_birth, 0.9);
     if (!fields.sex && info.valid && info.sex) set('sex', info.sex, 0.9);
     if (info.valid && fields.date_of_birth) fields.personal_number_matches_dob = info.date_of_birth === fields.date_of_birth;
@@ -800,6 +810,7 @@ export function crossCheckBulgarianMrz(ocrData: Record<string, any>, mrz: BgMrzF
   if (mrzEgn.length === 10 && !ocrData.personal_number) {
     ocrData.personal_number = mrzEgn;
     ocrData.personal_number_valid = parseEgn(mrzEgn).valid;
+    ocrData.personal_number_type = personalNumberType(mrzEgn, ocrData.bg_layout?.document ?? 'unknown', ocrData.nationality);
     ocrData.confidence_scores = ocrData.confidence_scores ?? {};
     ocrData.confidence_scores.personal_number = 0.95;
   }
