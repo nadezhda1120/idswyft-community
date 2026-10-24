@@ -1,0 +1,5 @@
+# Keep local ID samples and build junk out of the Docker build context
+test-samples/
+**/node_modules
+**/dist
+.git

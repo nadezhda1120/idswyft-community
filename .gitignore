@@ -167,3 +167,6 @@ caddy/certs/*.crt
 .agents/
 .aidesigner/
 .env*.local
+
+# Local ID samples (may contain real scans), never commit
+test-samples/
