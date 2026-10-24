@@ -78,3 +78,27 @@ export function findEgnInText(text: string): string | null {
   }
   return null;
 }
+
+// ── ЛНЧ (личен номер на чужденец) — personal number of a foreigner ──
+
+const LNCH_WEIGHTS = [21, 19, 17, 13, 11, 9, 7, 3, 1];
+
+/** ЛНЧ checksum: Σ(digit_i × weight_i) mod 10, weights 21,19,17,13,11,9,7,3,1. */
+export function lnchChecksumValid(value: string): boolean {
+  const n = normalizeEgn(value);
+  if (!/^\d{10}$/.test(n)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += Number(n[i]) * LNCH_WEIGHTS[i];
+  return sum % 10 === Number(n[9]);
+}
+
+/**
+ * What a 10-digit personal number printed on a Bulgarian document is: a citizen's
+ * ЕГН, a foreigner's ЛНЧ (residence permits), or neither. A number can pass both
+ * checksums; ЕГН wins when it also encodes a real birth date.
+ */
+export function classifyPersonalNumber(value: string): 'egn' | 'lnch' | 'unknown' {
+  if (parseEgn(value).valid) return 'egn';
+  if (lnchChecksumValid(value)) return 'lnch';
+  return 'unknown';
+}

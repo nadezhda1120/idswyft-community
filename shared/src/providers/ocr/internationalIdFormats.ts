@@ -342,6 +342,59 @@ export const INTERNATIONAL_ID_FORMATS: Record<string, CountryIdFormat> = {
     ],
   },
 
+  // Bulgaria — field extraction lives in providers/ocr/bg (Cyrillic, ЕГН, layouts);
+  // these entries register the country and its document-number formats.
+  BG: {
+    country: 'BG',
+    document_types: [
+      {
+        type: 'national_id', // Лична карта: 9 digits (1999/2010 cards), 2 letters + 7 digits (2024 card)
+        id_number_regex: /^(?:\d{9}|[A-Z]{2}\d{7})$/,
+        field_labels: {
+          name: [/фамилия/i, /име/i, /презиме/i, /surname/i, /\bname\b/i],
+          date_of_birth: [/дата\s*на\s*раждане/i, /date\s*of\s*birth/i],
+          expiry_date: [/валидност/i, /date\s*of\s*expiry/i],
+          id_number: [/№\s*на\s*документа/i, /document\s*n/i],
+          nationality: [/гражданство/i, /nationality/i],
+          address: [/постоянен\s*адрес/i, /residence/i],
+          issuing_authority: [/издаден[ао]?\s*от/i, /authority/i],
+        },
+        date_format: 'DMY',
+        has_mrz: true,
+      },
+      {
+        type: 'passport', // Паспорт: 9 digits
+        id_number_regex: /^\d{9}$/,
+        field_labels: {
+          name: [/фамилия/i, /име/i, /surname/i, /given\s*names/i, /\bnom\b/i, /prénoms/i],
+          date_of_birth: [/дата\s*на\s*раждане/i, /date\s*of\s*birth/i],
+          expiry_date: [/валидност/i, /date\s*of\s*expiry/i],
+          id_number: [/паспорт\s*№/i, /passport\s*n/i],
+          nationality: [/гражданство/i, /nationality/i],
+          address: [],
+          issuing_authority: [/издаден[ао]?\s*от/i, /authority/i],
+        },
+        date_format: 'DMY',
+        has_mrz: true,
+      },
+      {
+        type: 'drivers_license', // Свидетелство за управление на МПС: 9 digits, EU numbered fields
+        id_number_regex: /^\d{9}$/,
+        field_labels: {
+          name: [/^\s*1\s*[.,]/, /^\s*2\s*[.,]/],
+          date_of_birth: [/^\s*3\s*[.,]/],
+          expiry_date: [/^\s*4\s*[bб]\s*[.,]/i],
+          id_number: [/^\s*5\s*[.,]/],
+          nationality: [],
+          address: [/^\s*8\s*[.,]/],
+          issuing_authority: [/^\s*4\s*[cс]\s*[.,]/i],
+        },
+        date_format: 'DMY',
+        has_mrz: false,
+      },
+    ],
+  },
+
   IT: {
     country: 'IT',
     document_types: [
@@ -681,6 +734,9 @@ export const INTERNATIONAL_HEADER_NOISE = new Set([
   // Haiti — French + Haitian Creole
   "r\u00e9publique d'ha\u00efti", "repiblik dayiti",
   "carte d'identification nationale", "kat idantifikasyon nasyonal",
+  // Bulgarian
+  'лична карта', 'република българия', 'паспорт',
+  'свидетелство за управление на моторно превозно средство',
   // Italian
   "carta d'identit\u00e0", 'patente di guida', 'repubblica italiana',
   // Spanish

@@ -3,6 +3,7 @@ export {
 } from './transliteration.js';
 export {
   parseEgn, normalizeEgn, egnChecksumValid, egnBirthDate, egnSex, findEgnInText,
+  lnchChecksumValid, classifyPersonalNumber,
 } from './egn.js';
 export type { EgnInfo } from './egn.js';
 export {

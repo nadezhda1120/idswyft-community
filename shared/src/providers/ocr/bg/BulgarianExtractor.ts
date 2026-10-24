@@ -16,7 +16,7 @@
  * Pure and deterministic — no I/O, no model calls.
  */
 
-import { parseEgn, normalizeEgn, findEgnInText } from './egn.js';
+import { parseEgn, normalizeEgn, findEgnInText, classifyPersonalNumber } from './egn.js';
 import {
   transliterateBulgarian, hasCyrillic, foldLatinLookalikes, foldCyrillicLookalikes,
 } from './transliteration.js';
@@ -42,7 +42,7 @@ export interface BgLayout {
 
 export interface BgExtraction {
   layout: BgLayout;
-  fields: Record<string, string | string[] | boolean | null>;
+  fields: Record<string, string | string[] | boolean | null | LicenceCategoryRow[]>;
   confidence_scores: Record<string, number>;
 }
 
@@ -81,40 +81,47 @@ const cyr = (src: string): Label => ({ re: new RegExp(src, 'iu'), cyrillic: true
 const lat = (src: string): Label => ({ re: new RegExp(src, 'iu'), cyrillic: false });
 
 const LABELS = {
-  surname: [cyr(fz('ФАМИЛИЯ')), lat(fz('SURNAME'))],
+  // Passports add French: Nom, Prénoms, Nationalité, Date de naissance, …
+  surname: [cyr(fz('ФАМИЛИЯ')), lat(fz('SURNAME')), lat(word(fz('NOM')))],
   given: [
     cyr(word(fz('ИМЕ') + `(?:${fz('НА')})?`)),
     lat(fz('GIVEN NAME') + 'S?'),
+    lat(word(`${fz('PR')}[ÉEЕé]${fz('NOMS')}?`)),
     lat(word(`(?<!${fz('FATHER')}['’\`]?S?\\s{0,3})${fz('NAME')}`)),
   ],
   patronymic: [cyr(fz('ПРЕЗИМЕ')), lat(`${fz('FATHER')}['’\`]?S?\\s*${fz('NAME')}`)],
   nationality: [cyr(fz('ГРАЖДАНСТВО')), lat(fz('NATIO') + '\\p{L}*')],
-  date_of_birth: [cyr(fz('ДАТА НА РАЖДАНЕ')), lat(fz('DATE OF BIRTH'))],
-  sex: [cyr(word(fz('ПОЛ'))), lat(word(fz('SEX')))],
+  date_of_birth: [cyr(fz('ДАТА НА РАЖДАНЕ')), lat(fz('DATE OF BIRTH')), lat(fz('DATE DE NAISSANCE'))],
+  sex: [cyr(word(fz('ПОЛ'))), lat(word(fz('SEX') + 'E?'))],
   personal_number: [
     cyr(word(fz('ЕГН'))),
     lat(`${fz('PERSONAL')}\\s*[NnПп][OoОо0º°]\\.?`),
+    lat(`[NnПп][OoОо0º°]\\.?\\s*${fz('PERSONNEL')}`),
     cyr(`${fz('ЛИЧЕН')}\\s*(?:№|${fz('НОМЕР')})`),
   ],
-  expiration_date: [cyr(fz('ВАЛИДНОСТ')), cyr(fz('ВАЛИДЕН ДО')), lat(fz('DATE OF EXPIRY')), lat(fz('EXPIRY'))],
+  expiration_date: [
+    cyr(fz('ВАЛИДНОСТ')), cyr(fz('ВАЛИДЕН ДО')), lat(fz('DATE OF EXPIRY')), lat(fz('EXPIRY')),
+    lat(`${fz('DATE D')}['’]?\\s*${fz('EXPIRATION')}`),
+  ],
   document_number: [
     cyr(`(?:№|${fz('НОМЕР')})\\s*${fz('НА ДОКУМЕНТА')}`),
     lat(`${fz('DOCUMENT')}(?:\\s*\\p{L}+)?`),
     cyr(`${fz('ПАСПОРТ')}\\s*№`),
-    lat(`${fz('PASSPORT')}\\s*N[OoО]`),
+    lat(`${fz('PASSPORT')}\\s*N[OoО0º°]\\.?`),
+    lat(`${fz('PASSEPORT')}\\s*N[OoО0º°]\\.?`),
   ],
   // The last word of "Място на раждане" is often garbled ("рааие"), so it is optional.
-  place_of_birth: [cyr(`${fz('МЯСТО НА')}(?:\\s*\\p{L}+)?`), lat(fz('PLACE OF BIRTH'))],
+  place_of_birth: [cyr(`${fz('МЯСТО НА')}(?:\\s*\\p{L}+)?`), lat(fz('PLACE OF BIRTH')), lat(fz('LIEU DE NAISSANCE'))],
   address: [cyr(`${fz('ПОСТОЯНЕН')}(?:\\s*${fz('АДРЕС')})?`), lat(fz('RESIDENCE')), lat(fz('ADDRESS'))],
-  issuing_authority: [cyr(`${fz('ИЗДАДЕН')}[АаОо]?\\s*${fz('ОТ')}`), lat(fz('AUTHORITY'))],
-  issue_date: [cyr(fz('ДАТА НА ИЗДАВАНЕ')), lat(fz('DATE OF ISSUE'))],
+  issuing_authority: [cyr(`${fz('ИЗДАДЕН')}[АаОо]?\\s*${fz('ОТ')}`), lat(fz('AUTHORITY')), lat(`${fz('AUTORIT')}[ÉEЕé]`)],
+  issue_date: [cyr(fz('ДАТА НА ИЗДАВАНЕ')), lat(fz('DATE OF ISSUE')), lat(`${fz('DATE DE D')}[ÉEЕé]${fz('LIVRANCE')}`)],
   height: [cyr(fz('РЪСТ')), lat(fz('HEIGH') + '\\p{L}*')],
   eye_color: [
     cyr(`(?:${fz('ЦВЯТ')}\\s*${fz('НА')}\\s*)?${fz('ОЧИТЕ')}`),
     lat('COLOU?R\\s*OF\\s*EYES'),
     lat(fz('OF EYES')),
   ],
-  type: [cyr('^\\s*ВИД(?!\\p{L})'), lat('\\bTYPE\\b')],
+  type: [cyr('^\\s*(?:ВИД|ТИП)(?!\\p{L})'), lat('\\bTYPE\\b')],
   code: [cyr('^\\s*КОД(?!\\p{L})'), lat('\\bCODE\\b')],
 } satisfies Record<string, Label[]>;
 
@@ -188,15 +195,18 @@ export function identifyBulgarianLayout(lines: BgOcrLine[]): BgLayout {
 
   const td3 = mrz.some(l => l.length >= 43 && /^P[A-Z<]BGR/.test(l));
   const td1 = mrz.some(l => l.length >= 29 && l.length <= 31 && /^I[A-Z<]BGR/.test(l));
+  // Licence back: rows such as "B 10.03.2020 10.03.2030"
+  const categoryRows = licenceCategoryRows(lines).length;
   const numberedFields = lines.filter(l => /^\s*(?:[1-9]|4[abcdабсд]|1[0-2])\s*[.,](?!\d)\s*\S/i.test(l.text)).length;
 
   if (td3 || /ПАСПОРТ|PASSPORT|PASSEPORT/i.test(text)) {
     document = 'passport';
     signals.push(td3 ? 'mrz_td3_bgr' : 'keyword_passport');
     confidence = td3 ? 0.95 : 0.85;
-  } else if (/СВИДЕТЕЛСТВО\s*ЗА\s*УПРАВЛЕНИЕ|DRIVING\s*LICEN[CS]E/i.test(text) || numberedFields >= 4) {
+  } else if (/СВИДЕТЕЛСТВО\s*ЗА\s*УПРАВЛЕНИЕ|DRIVING\s*LICEN[CS]E/i.test(text) || numberedFields >= 4 || categoryRows >= 2) {
     document = 'driving_licence';
-    signals.push(numberedFields >= 4 ? `numbered_fields_${numberedFields}` : 'keyword_driving_licence');
+    signals.push(numberedFields >= 4 ? `numbered_fields_${numberedFields}`
+      : categoryRows >= 2 ? `category_rows_${categoryRows}` : 'keyword_driving_licence');
     confidence = 0.85;
   } else if (td1 || /ЛИЧНА\s*КАРТА|IDENTITY\s*CARD|CARTE\s*D.?IDENTIT/i.test(text) || /ЕГН/i.test(text)) {
     document = 'id_card';
@@ -212,7 +222,8 @@ export function identifyBulgarianLayout(lines: BgOcrLine[]): BgLayout {
     if (td1 || (hasBackLabels && !hasFrontLabels)) side = 'back';
     else if (hasFrontLabels) side = 'front';
   } else if (document === 'driving_licence') {
-    side = numberedFields >= 3 ? 'front' : (/\b9\s*[.,]|\b1[0-2]\s*[.,]/.test(text) ? 'back' : 'unknown');
+    side = categoryRows >= 2 ? 'back' : numberedFields >= 3 ? 'front'
+      : (/\b9\s*[.,]|\b1[0-2]\s*[.,]/.test(text) ? 'back' : 'unknown');
   }
 
   let generation: BgLayout['generation'] = null;
@@ -486,6 +497,28 @@ function numberedFields(lines: BgOcrLine[]): Map<string, Found[]> {
   return map;
 }
 
+export interface LicenceCategoryRow { category: string; valid_from: string | null; valid_until: string | null; restrictions?: string }
+
+/** Category rows of the licence back: a category code followed by one or two dates. */
+function licenceCategoryRows(lines: BgOcrLine[]): Array<LicenceCategoryRow & { confidence: number }> {
+  const rows: Array<LicenceCategoryRow & { confidence: number }> = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const t = foldLatinLookalikes(line.text).toUpperCase().trim();
+    const m = t.match(/^(AM|A1|A2|A|B1|BE|B|C1E|C1|CE|C|D1E|D1|DE|D|TTB|TKT|TM)\b\s*(.*)$/);
+    if (!m) continue;
+    const dates = [...m[2].matchAll(new RegExp(DATE_RE.source, 'g'))].map(d => parseBgDate(d[0]));
+    if (!dates.length || dates.every(d => d === null) || seen.has(m[1])) continue;
+    seen.add(m[1]);
+    const restrictions = m[2].replace(new RegExp(DATE_RE.source, 'g'), ' ').replace(/\s+/g, ' ').trim();
+    rows.push({
+      category: m[1], valid_from: dates[0] ?? null, valid_until: dates[1] ?? null,
+      ...(restrictions ? { restrictions } : {}), confidence: line.confidence,
+    });
+  }
+  return rows;
+}
+
 const LICENCE_CATEGORIES = ['AM', 'A1', 'A2', 'A', 'B1', 'B', 'BE', 'C1', 'C1E', 'C', 'CE', 'D1', 'D1E', 'D', 'DE', 'TTB', 'TKT', 'TM'];
 
 // ── Main entry point ──────────────────────────────────────────
@@ -503,7 +536,7 @@ export function extractBulgarianDocument(rawLines: BgOcrLine[], documentTypeHint
 
   const fields: BgExtraction['fields'] = {};
   const conf: Record<string, number> = {};
-  const set = (key: string, value: string | string[] | boolean | null, c: number) => {
+  const set = (key: string, value: BgExtraction['fields'][string], c: number) => {
     if (value === null || value === '' || (Array.isArray(value) && value.length === 0)) return;
     fields[key] = value;
     conf[key] = c;
@@ -548,6 +581,15 @@ export function extractBulgarianDocument(rawLines: BgOcrLine[], documentTypeHint
       const tokens = f9.map(f => f.value).join(' ').toUpperCase().split(/[\s,;\/]+/);
       const cats = LICENCE_CATEGORIES.filter(c => tokens.includes(c));
       set('licence_categories', cats, f9[0].confidence);
+    }
+    // Back side: one row per category — "B 10.03.2020 10.03.2030 [restriction codes]"
+    // (columns 9 = category, 10 = valid from, 11 = valid until, 12 = restrictions).
+    const rows = licenceCategoryRows(lines);
+    if (rows.length) {
+      const rowConf = Math.min(...rows.map(r => r.confidence));
+      set('licence_category_validity', rows.map(({ confidence, ...r }) => r), rowConf);
+      // The table lists every held category; it outranks the field-9 header row.
+      set('licence_categories', rows.map(r => r.category), rowConf);
     }
   } else {
     // ID card / passport: bilingual labels, after splitting merged lines
@@ -647,6 +689,8 @@ export function extractBulgarianDocument(rawLines: BgOcrLine[], documentTypeHint
   if (typeof fields.personal_number === 'string') {
     const info = parseEgn(fields.personal_number);
     fields.personal_number_valid = info.valid;
+    // Residence permits carry a foreigner's ЛНЧ instead of an ЕГН.
+    fields.personal_number_type = classifyPersonalNumber(fields.personal_number);
     if (!fields.date_of_birth && info.valid && info.date_of_birth) set('date_of_birth', info.date_of_birth, 0.9);
     if (!fields.sex && info.valid && info.sex) set('sex', info.sex, 0.9);
     if (info.valid && fields.date_of_birth) fields.personal_number_matches_dob = info.date_of_birth === fields.date_of_birth;

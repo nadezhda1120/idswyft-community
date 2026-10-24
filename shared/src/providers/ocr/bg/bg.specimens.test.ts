@@ -182,7 +182,7 @@ describe('formatBulgarianDocument', () => {
         full_name: { cyrillic: 'СЛАВИНА ГЕОРГИЕВА ИВАНОВА', latin: 'SLAVINA GEORGIEVA IVANOVA' },
         surname: { cyrillic: 'ИВАНОВА', latin: 'IVANOVA' },
         father_name: { cyrillic: 'ГЕОРГИЕВА', latin: 'GEORGIEVA' },
-        personal_number: { egn: '9508010133', checksum_valid: false },
+        personal_number: { number: '9508010133', checksum_valid: false },
         date_of_birth: '1995-08-01', sex: 'F',
         nationality: { code: 'BGR', cyrillic: 'БЪЛГАРИЯ' },
       },

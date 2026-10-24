@@ -57,6 +57,7 @@ export function formatBulgarianDocument(
       expiry_date: ocr.expiration_date,
       issuing_authority: pair(ocr.issuing_authority, ocr.issuing_authority_latin),
       licence_categories: ocr.licence_categories,
+      licence_category_validity: ocr.licence_category_validity,
     },
     holder: {
       full_name: pair(ocr.name_cyrillic, ocr.name),
@@ -69,7 +70,8 @@ export function formatBulgarianDocument(
         ocr.patronymic_latin_source === 'transliterated' && 'father_name',
       ].filter(Boolean),
       personal_number: {
-        egn: ocr.personal_number,
+        number: ocr.personal_number,
+        type: ocr.personal_number_type,
         checksum_valid: ocr.personal_number_valid,
         matches_date_of_birth: ocr.personal_number_matches_dob,
         matches_sex: ocr.personal_number_matches_sex,
