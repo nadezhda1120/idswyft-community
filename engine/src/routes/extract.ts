@@ -351,6 +351,17 @@ router.post('/front', upload.single('file'), async (req: Request, res: Response)
       });
     }
 
+    // Image quality and the preprocessing applied before OCR (information only).
+    // Set before the result is built: result.ocr is a copy of ocrData.
+    const imageQuality = {
+      ...oriented.preprocessing.quality,
+      preprocessing: oriented.preprocessing.steps,
+      preprocessing_tried: oriented.preprocessing.tried,
+      image_used: oriented.preprocessing.steps.length ? 'preprocessed' : 'original',
+      rotated_by: oriented.angle,
+    };
+    if (ocrData) ocrData.image_quality = imageQuality;
+
     const result: FrontExtractionResult = {
       ocr: {
         full_name: ocrData?.name || '',
@@ -375,15 +386,6 @@ router.post('/front', upload.single('file'), async (req: Request, res: Response)
       ocrConfidence: avgConfidence.toFixed(3),
       faceDetected: faceConfidence > 0,
     });
-
-    // Image quality and the preprocessing applied before OCR (information only)
-    const imageQuality = {
-      ...oriented.preprocessing.quality,
-      preprocessing: oriented.preprocessing.steps,
-      preprocessing_tried: oriented.preprocessing.tried,
-      rotated_by: oriented.angle,
-    };
-    if (ocrData) ocrData.image_quality = imageQuality;
 
     // Bulgarian documents get a readable, grouped summary first in the response;
     // ?view=document returns only that summary.
@@ -476,6 +478,7 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
             ...oriented.preprocessing.quality,
             preprocessing: oriented.preprocessing.steps,
             preprocessing_tried: oriented.preprocessing.tried,
+            image_used: oriented.preprocessing.steps.length ? 'preprocessed' : 'original',
             rotated_by: oriented.angle,
           };
         }

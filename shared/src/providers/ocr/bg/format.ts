@@ -104,7 +104,10 @@ export function formatBulgarianDocument(
       low_confidence_fields: lowConfidence,
       surname_trimmed_by_mrz: ocr.surname_trimmed_by_mrz,
       image_issues: ocr.image_quality?.issues,
+      image_used: ocr.image_quality?.image_used,
       preprocessing: ocr.image_quality?.preprocessing,
+      preprocessing_tried: ocr.image_quality?.preprocessing_tried,
+      rotated_by: ocr.image_quality?.rotated_by || undefined,
     },
   };
   return (compact(summary) ?? {}) as Record<string, Json>;
