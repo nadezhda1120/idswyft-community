@@ -16,9 +16,10 @@
  *   OCR_DEFAULT_SCRIPT          script used when no issuing country is known (latin | cyrillic)
  *
  * Text detection (see getOcrDetectionOptions):
- *   OCR_DET_MAX_SIDE            longest side the detector sees, px (default 960; library default 640
- *                               merges neighbouring rows on ID cards)
- *   OCR_DET_AUTO_DESKEW         straighten slightly rotated text before recognition (default true)
+ *   OCR_DET_MAX_SIDE            longest side the detector sees, px (default 640, the library default;
+ *                               960 read fewer fields on the Bulgarian specimen benchmark)
+ *   OCR_DET_AUTO_DESKEW         straighten slightly rotated text before recognition (default false;
+ *                               card photos are unwarped by preprocessing instead)
  *   OCR_DET_PADDING_V / OCR_DET_PADDING_H
  *                               box padding as a fraction of box height (defaults 0.4 / 0.6)
  *   OCR_DET_MIN_AREA            drop detected boxes smaller than this, px² (default 25)
@@ -112,8 +113,8 @@ function envNumber(name: string, fallback: number, min: number, max: number): nu
 /** Detection parameters for PaddleOCR, from the environment (same for every script). */
 export function getOcrDetectionOptions(): OcrDetectionOptions {
   return {
-    maxSideLength: envNumber('OCR_DET_MAX_SIDE', 960, 320, 4096),
-    autoDeskew: process.env.OCR_DET_AUTO_DESKEW !== 'false',
+    maxSideLength: envNumber('OCR_DET_MAX_SIDE', 640, 320, 4096),
+    autoDeskew: process.env.OCR_DET_AUTO_DESKEW === 'true',
     paddingVertical: envNumber('OCR_DET_PADDING_V', 0.4, 0, 2),
     paddingHorizontal: envNumber('OCR_DET_PADDING_H', 0.6, 0, 2),
     minimumAreaThreshold: envNumber('OCR_DET_MIN_AREA', 25, 0, 10000),

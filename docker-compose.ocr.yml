@@ -36,13 +36,13 @@ services:
       OCR_CYRILLIC_REC_DICT: "${OCR_CYRILLIC_REC_DICT:-}"
       OCR_DET_MODEL: "${OCR_DET_MODEL:-}"
       # Text detection (engine/src/config/ocrModels.ts)
-      OCR_DET_MAX_SIDE: "${OCR_DET_MAX_SIDE:-960}"
-      OCR_DET_AUTO_DESKEW: "${OCR_DET_AUTO_DESKEW:-true}"
+      OCR_DET_MAX_SIDE: "${OCR_DET_MAX_SIDE:-640}"
+      OCR_DET_AUTO_DESKEW: "${OCR_DET_AUTO_DESKEW:-false}"
       # Image preprocessing before OCR (engine/src/services/imagePreprocess.ts)
       OCR_PREPROCESS: "${OCR_PREPROCESS:-true}"
       OCR_PREPROCESS_CROP: "${OCR_PREPROCESS_CROP:-true}"
       OCR_PREPROCESS_ENHANCE: "${OCR_PREPROCESS_ENHANCE:-auto}"
-      OCR_PREPROCESS_MIN_SHORT_SIDE: "${OCR_PREPROCESS_MIN_SHORT_SIDE:-900}"
+      OCR_PREPROCESS_MIN_SHORT_SIDE: "${OCR_PREPROCESS_MIN_SHORT_SIDE:-350}"
     ports:
       - "3002:3002"
     healthcheck:

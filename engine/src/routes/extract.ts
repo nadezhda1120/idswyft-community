@@ -76,6 +76,17 @@ function scoreExtraction(ocr: { [key: string]: any } | null): number {
 
   // A well-formed MRZ block is decisive — it only parses at the correct orientation
   if (ocr.raw_text && detectMRZInText(ocr.raw_text)) score += 6;
+  if (ocr.raw_text && extractMRZFromText(ocr.raw_text)?.check_digits_valid) score += 2;
+
+  // Bulgarian cards: the fields only the Bulgarian extractor produces, so that the
+  // original and the preprocessed image (and the back side) can be compared too.
+  if (ocr.issuing_country === 'BG') {
+    for (const field of ['surname_cyrillic', 'given_name_cyrillic', 'patronymic_cyrillic', 'sex',
+      'nationality', 'issue_date', 'place_of_birth', 'issuing_authority']) {
+      if (ocr[field]) score += 1;
+    }
+    if (typeof ocr.personal_number === 'string' && /^\d{10}$/.test(ocr.personal_number)) score += 2;
+  }
 
   const values = Object.values(ocr.confidence_scores || {})
     .filter((v): v is number => typeof v === 'number');
@@ -108,7 +119,8 @@ interface OrientedExtraction {
   buffer: Buffer;
   angle: number;
   score: number;
-  preprocessing: Pick<PreprocessResult, 'steps' | 'quality' | 'card_corners'>;
+  /** steps: what the OCR result used; tried: what preprocessing produced. */
+  preprocessing: Pick<PreprocessResult, 'steps' | 'quality' | 'card_corners'> & { tried: string[] };
 }
 
 /**
@@ -132,33 +144,41 @@ async function extractWithOrientation(
   llmConfig: LLMProviderConfig | undefined,
 ): Promise<OrientedExtraction> {
   const pre = await preprocessForOcr(upload);
-  const preprocessing = { steps: pre.steps, quality: pre.quality, card_corners: pre.card_corners };
+
+  // Preprocessing helps some photos and hurts some clean scans, so when it changed
+  // the image both versions are read and the better-scoring read wins. Deterministic:
+  // the score counts validated fields (parsed MRZ, ЕГН, labelled dates, …).
+  const sources: Array<{ name: 'preprocessed' | 'original'; buffer: Buffer }> = pre.steps.length
+    ? [{ name: 'preprocessed', buffer: pre.buffer }, { name: 'original', buffer: pre.original }]
+    : [{ name: 'original', buffer: pre.original }];
 
   // 270° first among the rotations: portrait photos of landscape documents are the
   // common real-world case and land here.
   const angles = [0, 270, 90, 180];
-  let best: Omit<OrientedExtraction, 'buffer' | 'preprocessing'> | null = null;
+  let best: { ocr: any; angle: number; score: number; source: 'preprocessed' | 'original' } | null = null;
 
-  for (const angle of angles) {
-    let candidate = pre.buffer;
-    if (angle !== 0) {
+  for (const source of sources) {
+    for (const angle of angles) {
+      let candidate = source.buffer;
+      if (angle !== 0) {
+        try {
+          candidate = await sharp(source.buffer).rotate(angle).toBuffer();
+        } catch {
+          continue;
+        }
+      }
+
+      let ocr: any = null;
       try {
-        candidate = await sharp(pre.buffer).rotate(angle).toBuffer();
+        ocr = await ocrService.processDocumentFromBuffer(candidate, documentType, issuingCountry, llmConfig);
       } catch {
         continue;
       }
-    }
 
-    let ocr: any = null;
-    try {
-      ocr = await ocrService.processDocumentFromBuffer(candidate, documentType, issuingCountry, llmConfig);
-    } catch {
-      continue;
+      const score = scoreExtraction(ocr);
+      if (!best || score > best.score) best = { ocr, angle, score, source: source.name };
+      if (score >= ORIENTATION_GOOD_ENOUGH) break;
     }
-
-    const score = scoreExtraction(ocr);
-    if (!best || score > best.score) best = { ocr, angle, score };
-    if (score >= ORIENTATION_GOOD_ENOUGH) break;
   }
 
   if (best && best.angle !== 0) {
@@ -167,7 +187,7 @@ async function extractWithOrientation(
     });
   }
   if (pre.steps.length || pre.quality.issues.length) {
-    logger.info('OCR preprocessing', { steps: pre.steps, issues: pre.quality.issues });
+    logger.info('OCR preprocessing', { steps: pre.steps, issues: pre.quality.issues, used: best?.source });
   }
 
   const angle = best?.angle ?? 0;
@@ -175,7 +195,15 @@ async function extractWithOrientation(
   if (angle !== 0) {
     try { buffer = await sharp(pre.original).rotate(angle).toBuffer(); } catch { /* keep upright */ }
   }
-  return { ocr: best?.ocr ?? null, buffer, angle, score: best?.score ?? 0, preprocessing };
+  return {
+    ocr: best?.ocr ?? null, buffer, angle, score: best?.score ?? 0,
+    preprocessing: {
+      steps: best?.source === 'preprocessed' ? pre.steps : [],
+      tried: pre.steps,
+      quality: pre.quality,
+      card_corners: best?.source === 'preprocessed' ? pre.card_corners : null,
+    },
+  };
 }
 
 // ─── POST /extract/front ─────────────────────────────────────────
@@ -349,7 +377,12 @@ router.post('/front', upload.single('file'), async (req: Request, res: Response)
     });
 
     // Image quality and the preprocessing applied before OCR (information only)
-    const imageQuality = { ...oriented.preprocessing.quality, preprocessing: oriented.preprocessing.steps, rotated_by: oriented.angle };
+    const imageQuality = {
+      ...oriented.preprocessing.quality,
+      preprocessing: oriented.preprocessing.steps,
+      preprocessing_tried: oriented.preprocessing.tried,
+      rotated_by: oriented.angle,
+    };
     if (ocrData) ocrData.image_quality = imageQuality;
 
     // Bulgarian documents get a readable, grouped summary first in the response;
@@ -435,9 +468,17 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
     let backOcr: Record<string, any> | null = null;
     if (isBulgarian) {
       try {
-        const pre = await preprocessForOcr(imageBuffer);
-        backOcr = await ocrService.processDocumentFromBuffer(pre.buffer, 'national_id', 'BG');
-        if (backOcr) backOcr.image_quality = { ...pre.quality, preprocessing: pre.steps };
+        // Same preprocessing, dual read and orientation retry as the front.
+        const oriented = await extractWithOrientation(imageBuffer, 'national_id', 'BG', undefined);
+        backOcr = oriented.ocr;
+        if (backOcr) {
+          backOcr.image_quality = {
+            ...oriented.preprocessing.quality,
+            preprocessing: oriented.preprocessing.steps,
+            preprocessing_tried: oriented.preprocessing.tried,
+            rotated_by: oriented.angle,
+          };
+        }
         // Prefer the Cyrillic read's MRZ unless the barcode scanner already has a valid one.
         if (!mrzResult?.check_digits_valid && backOcr?.raw_text) {
           const paddleMrz = extractMRZFromText(backOcr.raw_text);

@@ -97,15 +97,15 @@ describe('preprocessForOcr', () => {
     expect(out.steps.some(s => s.startsWith('upscaled'))).toBe(true)
     expect(out.card_corners).toHaveLength(4)
     const meta = await sharp(out.buffer).metadata()
-    // The crop is ~265 px tall; upscaling is capped at 2×.
-    expect(Math.min(meta.width!, meta.height!)).toBeGreaterThan(500)
+    // The crop is ~265 px tall: upscaled toward 350 px.
+    expect(Math.min(meta.width!, meta.height!)).toBeGreaterThan(340)
     expect(out.steps).toContain('contrast_stretched')
   })
 
   it('passes the upload through when disabled', async () => {
     const img = await photo(0)
     const out = await preprocessForOcr(img, {
-      enabled: false, crop: true, enhance: 'auto', minShortSide: 640, blurMin: 40, glareMax: 0.12,
+      enabled: false, crop: true, enhance: 'auto', minShortSide: 350, blurMin: 40, glareMax: 0.12,
     })
     expect(out.steps).toEqual([])
     expect(out.card_corners).toBeNull()

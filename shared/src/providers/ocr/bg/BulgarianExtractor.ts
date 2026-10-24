@@ -465,7 +465,8 @@ function nationalityCode(value: string, cyrillic: string | null): string | null 
 
 /** Bulgarian cards print the Ministry of Interior as "МВР/MoI BGR" (often read "MBP/Mol BCR"). */
 function issuingAuthority(value: string): { cyrillic: string; latin: string | null } {
-  if (/(?<!\p{L})[MМ][BВ][PР](?!\p{L})|MBPIMOL/iu.test(value)) return { cyrillic: 'МВР', latin: 'MoI BGR' };
+  // "MBP/Mol BCR", "MBPIMo/ BCR", "MBPIMOIBGR", …
+  if (/(?<!\p{L})[MМ][BВ][PР]/iu.test(value)) return { cyrillic: 'МВР', latin: 'MoI BGR' };
   return { cyrillic: value, latin: null };
 }
 

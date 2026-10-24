@@ -18,7 +18,8 @@
  *   OCR_PREPROCESS=false            skip preprocessing entirely (OCR gets the upload as is)
  *   OCR_PREPROCESS_CROP=false       don't detect / crop / unwarp the card
  *   OCR_PREPROCESS_ENHANCE=auto     auto (when quality needs it) | always | never
- *   OCR_PREPROCESS_MIN_SHORT_SIDE   upscale until the short side is at least this, px (default 640)
+ *   OCR_PREPROCESS_MIN_SHORT_SIDE   upscale until the short side is at least this, px (default 350;
+ *                                   upscaling 600 px scans 2× lost fields in testing)
  *   OCR_QUALITY_BLUR_MIN            sharpness (Laplacian variance) below this is "blurry" (default 40)
  *   OCR_QUALITY_GLARE_MAX           share of saturated pixels above this is "glare" (default 0.12;
  *                                   card security print is light, so lower values flag clean scans)
@@ -78,7 +79,7 @@ export function readPreprocessConfig(): PreprocessConfig {
     enabled: process.env.OCR_PREPROCESS !== 'false',
     crop: process.env.OCR_PREPROCESS_CROP !== 'false',
     enhance: enhance === 'always' || enhance === 'never' ? enhance : 'auto',
-    minShortSide: envNumber('OCR_PREPROCESS_MIN_SHORT_SIDE', 640),
+    minShortSide: envNumber('OCR_PREPROCESS_MIN_SHORT_SIDE', 350),
     blurMin: envNumber('OCR_QUALITY_BLUR_MIN', 40),
     glareMax: envNumber('OCR_QUALITY_GLARE_MAX', 0.12),
   };
@@ -375,7 +376,7 @@ export async function preprocessForOcr(upload: Buffer, config = readPreprocessCo
   const meta = await sharp(buffer).metadata();
   const shortSide = Math.min(meta.width ?? 0, meta.height ?? 0);
   if (shortSide > 0 && shortSide < config.minShortSide) {
-    const factor = Math.min(2, config.minShortSide / shortSide);
+    const factor = Math.min(1.5, config.minShortSide / shortSide);
     buffer = await sharp(buffer)
       .resize(Math.round((meta.width ?? 0) * factor), Math.round((meta.height ?? 0) * factor), { kernel: 'lanczos3' })
       .png().toBuffer();
