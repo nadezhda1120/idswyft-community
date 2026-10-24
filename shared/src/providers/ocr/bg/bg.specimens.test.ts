@@ -192,3 +192,16 @@ describe('formatBulgarianDocument', () => {
     expect(doc.holder).not.toHaveProperty('address')
   })
 })
+
+describe('formatBulgarianDocument — MRZ block', () => {
+  it('strips the one-letter filler noise from the MRZ given names', () => {
+    const ocr: Record<string, any> = { raw_text: '' }
+    applyBulgarianExtraction(ocr, extractBulgarianDocument(BACK_2024))
+    const doc = formatBulgarianDocument(ocr, {
+      format: 'TD1', check_digits_valid: true,
+      fields: { document_number: 'AA0000000', last_name: 'IVANOVA', first_name: 'SLAVINA GEORGIEVA K' },
+    })
+    expect(doc.mrz).toMatchObject({ given_names: 'SLAVINA GEORGIEVA', check_digits_valid: true })
+    expect(doc.document).toMatchObject({ issue_date: '2024-06-17', generation: 'id_card_2024' })
+  })
+})

@@ -87,7 +87,10 @@ export function formatBulgarianDocument(
       check_digits_valid: mrz.check_digits_valid,
       document_number: mrz.fields?.document_number,
       surname: mrz.fields?.last_name,
-      given_names: mrz.fields?.first_name,
+      // A trailing one-letter token is filler noise ("GEORGIEVA<K<<"), not a name.
+      given_names: typeof mrz.fields?.first_name === 'string'
+        ? mrz.fields.first_name.replace(/(?:\s+\S)+\s*$/, '')
+        : undefined,
       date_of_birth: mrz.fields?.date_of_birth,
       expiry_date: mrz.fields?.expiry_date,
       personal_number: mrz.fields?.personal_number,

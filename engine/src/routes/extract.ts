@@ -263,7 +263,7 @@ router.post('/front', upload.single('file'), async (req: Request, res: Response)
         if (detectedCountry) ocrData.issuing_country = detectedCountry;
 
         // Bulgarian documents: compare visual fields with the MRZ, take the ЕГН from it
-        if ((detectedCountry || '').toUpperCase() === 'BG') {
+        if ((detectedCountry || ocrData.issuing_country || '').toUpperCase() === 'BG') {
           crossCheckBulgarianMrz(ocrData, mrzResult.fields);
         }
 
@@ -340,7 +340,8 @@ router.post('/front', upload.single('file'), async (req: Request, res: Response)
 
     // Bulgarian documents get a readable, grouped summary first in the response;
     // ?view=document returns only that summary.
-    const document = (detectedCountry || '').toUpperCase() === 'BG' && ocrData
+    // ocrData.issuing_country is 'BG' also when the card was auto-detected as Bulgarian.
+    const document = (detectedCountry || ocrData?.issuing_country || '').toUpperCase() === 'BG' && ocrData
       ? formatBulgarianDocument(ocrData, frontMrz)
       : undefined;
     if (document && req.query.view === 'document') return res.json({ success: true, document });

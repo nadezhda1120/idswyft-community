@@ -407,7 +407,7 @@ export class PaddleOCRProvider implements OCRProvider {
     if (country === 'BG') {
       // Dedicated Bulgarian extractor: bilingual labels, Cyrillic + Latin names, ЕГН
       const callerType = documentType && documentType !== 'auto' ? documentType : undefined;
-      const extraction = extractBulgarianDocument(this.flattenLines(result.lines), callerType);
+      const extraction = extractBulgarianDocument(this.readingOrderLines(result), callerType);
       applyBulgarianExtraction(ocrData, extraction);
       logger.info('PaddleOCR Bulgarian extraction', {
         script,
@@ -506,6 +506,25 @@ export class PaddleOCRProvider implements OCRProvider {
    *
    * Uses the `box: { x, y, width, height }` property from RecognitionResult.
    */
+  /**
+   * Lines in the recogniser's own reading order, exactly as in raw_text.
+   * flattenLines() re-sorts each line's boxes by x, which scrambles a group that
+   * spans several rows (Bulgarian ID fronts: "RADNEVA РАДНЕВА МАРИЦА IVANOVA …").
+   * Confidence is the mean of the line's boxes when the line counts agree.
+   */
+  private readingOrderLines(result: { text: string; lines: RecognitionResult[][] }): FlatLine[] {
+    const texts = (result.text ?? '').split('\n');
+    const all = result.lines.flat();
+    const overall = all.length ? all.reduce((sum, item) => sum + item.confidence, 0) / all.length : 0;
+    return texts.map((text, i) => {
+      const items = texts.length === result.lines.length ? result.lines[i] : [];
+      const confidence = items?.length
+        ? items.reduce((sum, item) => sum + item.confidence, 0) / items.length
+        : overall;
+      return { text, confidence, y: i, x: 0, width: 0 };
+    });
+  }
+
   private flattenLines(lines: RecognitionResult[][]): FlatLine[] {
     return lines
       .map((lineItems): FlatLine | null => {
