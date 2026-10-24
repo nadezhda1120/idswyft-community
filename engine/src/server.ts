@@ -14,6 +14,7 @@
 import './instrument.js';
 import 'dotenv/config';
 import * as Sentry from '@sentry/node';
+import crypto from 'crypto';
 import express from 'express';
 import { logger } from '@/utils/logger.js';
 import { configureSharedLogger } from '@idswyft/shared';
@@ -35,8 +36,19 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'idswyft-engine', uptime: process.uptime() });
 });
 
+// Optional API key: when ENGINE_API_KEY is set, /extract/* requires it in the
+// X-API-Key header (or "Authorization: Bearer <key>"). /health stays open.
+const ENGINE_API_KEY = process.env.ENGINE_API_KEY || '';
+function requireApiKey(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (!ENGINE_API_KEY) return next();
+  const header = req.get('x-api-key') || req.get('authorization')?.replace(/^Bearer\s+/i, '') || '';
+  const a = Buffer.from(header), b = Buffer.from(ENGINE_API_KEY);
+  if (a.length === b.length && crypto.timingSafeEqual(a, b)) return next();
+  res.status(401).json({ success: false, error: 'Missing or invalid API key (send it in the X-API-Key header)' });
+}
+
 // Extraction routes
-app.use('/extract', extractRouter);
+app.use('/extract', requireApiKey, extractRouter);
 
 // Sentry error handler — must be registered before any other error middleware
 Sentry.setupExpressErrorHandler(app);

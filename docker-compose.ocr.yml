@@ -5,7 +5,7 @@
 # returned as JSON; nothing is stored. No PostgreSQL, API or frontend.
 #
 #   docker compose -f docker-compose.ocr.yml up -d --build
-#   curl -F "file=@front.jpg" -F "issuing_country=BG" http://localhost:3002/extract/front
+#   curl -H "X-API-Key: $ENGINE_API_KEY" -F "file=@front.jpg" -F "issuing_country=BG" http://localhost:3002/extract/front
 #   docker compose -f docker-compose.ocr.yml down
 #
 # Built from source so local changes (Bulgarian / Cyrillic support) are included.
@@ -25,6 +25,8 @@ services:
       NODE_ENV: production
       PORT: "3002"
       LOG_LEVEL: info
+      # Optional: require this key in the X-API-Key header on /extract/* (set it in .env)
+      ENGINE_API_KEY: "${ENGINE_API_KEY:-}"
       # OCR models — all optional, see engine/src/config/ocrModels.ts
       OCR_CYRILLIC_ENABLED: "${OCR_CYRILLIC_ENABLED:-true}"
       OCR_DEFAULT_SCRIPT: "${OCR_DEFAULT_SCRIPT:-latin}"

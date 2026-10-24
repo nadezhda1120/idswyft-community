@@ -157,6 +157,8 @@ async function callEngineOnce<T>(
       method: 'POST',
       body: formData,
       signal: controller.signal,
+      // Matches the engine's optional ENGINE_API_KEY check
+      ...(process.env.ENGINE_API_KEY ? { headers: { 'X-API-Key': process.env.ENGINE_API_KEY } } : {}),
     });
 
     if (!response.ok) {
