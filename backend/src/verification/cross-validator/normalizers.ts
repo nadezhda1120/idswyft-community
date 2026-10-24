@@ -3,6 +3,8 @@
  * Each function takes a raw value and returns a normalized string or null.
  */
 
+import { transliterateBulgarian } from '@idswyft/shared';
+
 // Common alpha-2 → alpha-3 country code mapping (80+ entries for all priority regions)
 const COUNTRY_MAP: Record<string, string> = {
   // English-speaking
@@ -63,14 +65,16 @@ export function normalizeIdNumber(value: unknown): string | null {
 
 /**
  * Normalize a person's name: uppercase, strip diacritics, remove special chars,
- * collapse whitespace, replace MRZ fillers (<<) with spaces.
+ * collapse whitespace, replace MRZ fillers (<<) with spaces. Bulgarian Cyrillic is
+ * transliterated first (Streamlined System), so it is compared, not deleted.
  */
 export function normalizeName(value: unknown): string | null {
   if (value == null) return null;
   const str = String(value).trim();
   if (!str) return null;
 
-  return str
+  // Cyrillic names (Bulgarian documents) → Latin, so "ИВАНОВА" matches the MRZ's "IVANOVA"
+  return transliterateBulgarian(str)
     // Replace MRZ filler << with space
     .replace(/<<+/g, ' ')
     // Strip diacritics

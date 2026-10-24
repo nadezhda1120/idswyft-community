@@ -212,6 +212,26 @@ const deepfakeModel = {
     'https://github.com/team-idswyft/idswyft/releases/download/models-v1.0.0/deepfake-detector.onnx',
 };
 
+// OCR recognition models for non-Latin scripts. Bundled into the image so the engine
+// never downloads them at runtime. PP-OCRv5 cyrillic covers Bulgarian, Russian,
+// Ukrainian, Serbian and more, plus Latin letters and digits (MRZ, Latin names).
+const ocrModelBase = process.env.OCR_MODEL_BASE_URL ||
+  'https://media.githubusercontent.com/media/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr-models/main';
+const ocrDictBase = process.env.OCR_DICT_BASE_URL ||
+  'https://raw.githubusercontent.com/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr-models/main';
+const ocrModels = [
+  {
+    fileName: 'cyrillic_PP-OCRv5_mobile_rec_infer.onnx',
+    url: `${ocrModelBase}/recognition/multi/cyrillic/v5/cyrillic_PP-OCRv5_mobile_rec_infer.onnx`,
+    onnx: true,
+  },
+  {
+    fileName: 'ppocrv5_cyrillic_dict.txt',
+    url: `${ocrDictBase}/recognition/multi/cyrillic/v5/ppocrv5_cyrillic_dict.txt`,
+    onnx: false,
+  },
+];
+
 // Voice authentication models (optional — only needed when voice auth is enabled)
 const voiceModels = {
   speaker: {
@@ -322,6 +342,34 @@ async function downloadModels() {
       }
     } else {
       console.log(`⏭️  Skipped: ${deepfakeModel.fileName} (optional — no DEEPFAKE_MODEL_URL set)`);
+    }
+  }
+
+  // ─── OCR recognition models (Cyrillic) ───────────────────────────
+  // Optional: without them the engine downloads the model on first use, or
+  // keeps reading Latin only if OCR_CYRILLIC_ENABLED=false.
+  const ocrModelsDir = path.join(modelsDir, 'ocr');
+  if (!fs.existsSync(ocrModelsDir)) {
+    fs.mkdirSync(ocrModelsDir, { recursive: true });
+  }
+  for (const model of ocrModels) {
+    const modelPath = path.join(ocrModelsDir, model.fileName);
+    const present = fs.existsSync(modelPath) && (model.onnx ? isValidOnnx(modelPath) : fs.statSync(modelPath).size > 0);
+    if (present) {
+      console.log(`⏭️  Skipped: ${model.fileName} (already exists)`);
+      skipped++;
+      continue;
+    }
+    if (fs.existsSync(modelPath)) fs.unlinkSync(modelPath);
+    try {
+      await downloadFile(model.url, modelPath);
+      if (model.onnx && !isValidOnnx(modelPath)) {
+        fs.unlinkSync(modelPath);
+        throw new Error('Downloaded file is not a valid ONNX model');
+      }
+      downloaded++;
+    } catch (error) {
+      console.log(`⏭️  Skipped: ${model.fileName} (optional — ${error.message})`);
     }
   }
 

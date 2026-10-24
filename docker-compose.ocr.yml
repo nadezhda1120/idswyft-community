@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────────
+# Idswyft OCR engine only — stateless, no database
+# ─────────────────────────────────────────────────
+# Runs just the ML engine. Images are processed in memory and the result is
+# returned as JSON; nothing is stored. No PostgreSQL, API or frontend.
+#
+#   docker compose -f docker-compose.ocr.yml up -d --build
+#   curl -F "file=@front.jpg" -F "issuing_country=BG" http://localhost:3002/extract/front
+#   docker compose -f docker-compose.ocr.yml down
+#
+# Built from source so local changes (Bulgarian / Cyrillic support) are included.
+# ─────────────────────────────────────────────────
+
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: engine/Dockerfile
+      args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    image: idswyft-engine-bg:local
+    restart: unless-stopped
+    mem_limit: 2g
+    environment:
+      NODE_ENV: production
+      PORT: "3002"
+      LOG_LEVEL: info
+      # OCR models — all optional, see engine/src/config/ocrModels.ts
+      OCR_CYRILLIC_ENABLED: "${OCR_CYRILLIC_ENABLED:-true}"
+      OCR_DEFAULT_SCRIPT: "${OCR_DEFAULT_SCRIPT:-latin}"
+      OCR_REC_MODEL: "${OCR_REC_MODEL:-}"
+      OCR_REC_DICT: "${OCR_REC_DICT:-}"
+      OCR_CYRILLIC_REC_MODEL: "${OCR_CYRILLIC_REC_MODEL:-}"
+      OCR_CYRILLIC_REC_DICT: "${OCR_CYRILLIC_REC_DICT:-}"
+      OCR_DET_MODEL: "${OCR_DET_MODEL:-}"
+    ports:
+      - "3002:3002"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

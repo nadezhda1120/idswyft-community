@@ -61,6 +61,15 @@ export {
 export type { LLMProviderConfig, LLMExtractionRequest } from './providers/ocr/LLMFieldExtractor.js';
 export { OpenAIProvider } from './providers/ocr/OpenAIProvider.js';
 
+// Bulgarian documents (Cyrillic, ЕГН, layouts)
+export {
+  transliterateBulgarian, hasCyrillic, foldLatinLookalikes, foldCyrillicLookalikes,
+  parseEgn, normalizeEgn, egnChecksumValid, egnBirthDate, egnSex, findEgnInText,
+  extractBulgarianDocument, applyBulgarianExtraction, identifyBulgarianLayout,
+  parseBgDate, parseBgDocumentNumber, crossCheckBulgarianMrz,
+} from './providers/ocr/bg/index.js';
+export type { EgnInfo, BgOcrLine, BgLayout, BgExtraction, BgDocumentKind, BgMrzFields } from './providers/ocr/bg/index.js';
+
 // Verification models
 export {
   RejectionReason,

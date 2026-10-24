@@ -26,6 +26,7 @@ import {
   HeadTurnLivenessMetadataSchema,
   SharpTamperDetector, DocumentZoneValidator,
   createDeepfakeDetector,
+  crossCheckBulgarianMrz,
 } from '@idswyft/shared';
 import type {
   HeadTurnLivenessMetadata,
@@ -258,6 +259,11 @@ router.post('/front', upload.single('file'), async (req: Request, res: Response)
         }
         if (detectedCountry) ocrData.issuing_country = detectedCountry;
 
+        // Bulgarian documents: compare visual fields with the MRZ, take the ЕГН from it
+        if ((detectedCountry || '').toUpperCase() === 'BG') {
+          crossCheckBulgarianMrz(ocrData, mrzResult.fields);
+        }
+
         logger.info('MRZ enrichment applied', {
           checkDigitsValid: mrzResult.check_digits_valid,
           format: mrzResult.format,
@@ -353,6 +359,7 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
     }
 
     const imageBuffer = req.file.buffer;
+    const issuingCountry: string | undefined = (req.body.issuing_country || '').toUpperCase() || undefined;
 
     // 1. Barcode/PDF417 scanning from buffer
     let barcodeData;
@@ -389,8 +396,33 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
     } : null);
 
     // 3. MRZ detection from raw OCR text
-    const rawText = barcodeData?.raw_text || '';
-    const mrzResult = extractMRZFromText(rawText);
+    let rawText = barcodeData?.raw_text || '';
+    let mrzResult = extractMRZFromText(rawText);
+
+    // Bulgarian ID card back: place of birth, address, authority and issue date are
+    // printed in Cyrillic, which the barcode scanner's English OCR cannot read.
+    // Read the back with PaddleOCR (Cyrillic model) and use its MRZ if Tesseract
+    // missed one.
+    const isBulgarian = issuingCountry === 'BG'
+      || (!issuingCountry && mrzResult?.fields.issuing_country === 'BGR');
+    let backOcr: Record<string, any> | null = null;
+    if (isBulgarian) {
+      try {
+        backOcr = await ocrService.processDocumentFromBuffer(imageBuffer, 'national_id', 'BG');
+        if (!mrzResult && backOcr?.raw_text) {
+          const paddleMrz = extractMRZFromText(backOcr.raw_text);
+          if (paddleMrz) {
+            mrzResult = paddleMrz;
+            rawText = backOcr.raw_text;
+          }
+        }
+        if (backOcr && mrzResult) crossCheckBulgarianMrz(backOcr, mrzResult.fields);
+      } catch (err) {
+        logger.warn('Bulgarian back-side OCR failed (non-blocking)', {
+          error: err instanceof Error ? err.message : 'Unknown',
+        });
+      }
+    }
 
     let finalQrPayload = qrPayload;
     let barcodeFormat: 'PDF417' | 'QR_CODE' | 'DATA_MATRIX' | 'CODE_128' | 'MRZ_TD1' | 'MRZ_TD2' | 'MRZ_TD3' | null =
@@ -423,11 +455,12 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
       checksums_valid: true,
     } : null);
 
-    const result: BackExtractionResult = {
+    const result: BackExtractionResult & { ocr?: Record<string, any> } = {
       qr_payload: finalQrPayload,
       mrz_result: mrzForGate,
       barcode_format: barcodeFormat,
       raw_barcode_data: barcodeData?.pdf417_data?.raw_data || barcodeData?.barcode_data || null,
+      ...(backOcr ? { ocr: backOcr } : {}),
     };
 
     logger.info('Back extraction complete', {

@@ -27,6 +27,8 @@ export interface MRZParseResult {
     nationality: string | null;     // ISO alpha-3
     issuing_country: string | null; // ISO alpha-3 (issuingState from MRZ)
     sex: string | null;
+    /** Personal / optional data (e.g. the Bulgarian ЕГН), fillers removed. */
+    personal_number: string | null;
   };
   raw_lines: string[];
 }
@@ -96,6 +98,7 @@ export function parseMRZLines(lines: string[]): MRZParseResult | null {
         nationality: fields.nationality ?? null,
         issuing_country: fields.issuingState ?? null,
         sex: fields.sex ?? null,
+        personal_number: personalNumberFrom(fields as Record<string, unknown>),
       },
       raw_lines: lines,
     };
@@ -107,6 +110,20 @@ export function parseMRZLines(lines: string[]): MRZParseResult | null {
     });
     return null;
   }
+}
+
+/**
+ * Personal number from the MRZ: TD3 `personalNumber`, else the TD1/TD2 optional
+ * data fields. Fillers are stripped; null when nothing is there.
+ */
+function personalNumberFrom(fields: Record<string, unknown>): string | null {
+  for (const key of ['personalNumber', 'optional2', 'optional1', 'optional']) {
+    const raw = fields[key];
+    if (typeof raw !== 'string') continue;
+    const cleaned = raw.replace(/</g, '').trim();
+    if (cleaned) return cleaned;
+  }
+  return null;
 }
 
 /**

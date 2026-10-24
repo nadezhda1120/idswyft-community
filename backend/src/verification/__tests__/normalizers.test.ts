@@ -58,6 +58,11 @@ describe('normalizeName', () => {
   it('strips MRZ filler characters', () => {
     expect(normalizeName('DOE<<JOHN')).toBe('DOE JOHN');
   });
+
+  it('transliterates Bulgarian Cyrillic instead of dropping it', () => {
+    expect(normalizeName('ИВАНОВА СЛАВИНА')).toBe('IVANOVA SLAVINA');
+    expect(normalizeName('МАРИЯ')).toBe(normalizeName('MARIA'));
+  });
 });
 
 describe('normalizeDate', () => {

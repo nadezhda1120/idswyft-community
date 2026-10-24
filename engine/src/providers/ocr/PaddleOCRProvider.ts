@@ -8,8 +8,12 @@ import {
   getCountryFormat, getGenericEUFormat, INTERNATIONAL_HEADER_NOISE, STATE_DL_FORMATS,
   findLowConfidenceFields, extractFieldsWithLLM, mergeLLMResults,
   classifyDocument, applyUkDlCrossCheck, isLikelyUkDl,
+  extractBulgarianDocument, applyBulgarianExtraction, foldLatinLookalikes,
 } from '@idswyft/shared';
 import { logger } from '@/utils/logger.js';
+import {
+  type OcrScript, getOcrModelPaths, scriptForCountry, looksBulgarian,
+} from '@/config/ocrModels.js';
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -290,44 +294,83 @@ function nameScore(text: string): number {
 export class PaddleOCRProvider implements OCRProvider {
   readonly name = 'paddle';
 
-  private service:     PaddleOcrService | null = null;
-  private initPromise: Promise<void>     | null = null;
+  // One recognizer per script: the recognition model fixes the alphabet that can be read.
+  private services:     Map<OcrScript, PaddleOcrService>      = new Map();
+  private initPromises: Map<OcrScript, Promise<void>>         = new Map();
 
-  private async ensureInitialized(): Promise<PaddleOcrService> {
-    if (this.service) return this.service;
-    if (!this.initPromise) {
-      this.initPromise = (async () => {
-        logger.info('PaddleOCRProvider: initializing ONNX models…');
+  private async ensureInitialized(script: OcrScript = 'latin'): Promise<PaddleOcrService> {
+    const ready = this.services.get(script);
+    if (ready) return ready;
+    if (!this.initPromises.has(script)) {
+      this.initPromises.set(script, (async () => {
+        const model = getOcrModelPaths(script);
+        logger.info('PaddleOCRProvider: initializing ONNX models…', {
+          script,
+          customDetection: !!model.detection,
+          customRecognition: !!model.recognition,
+        });
         try {
-          const svc = new PaddleOcrService({ debugging: { verbose: false } });
+          const svc = new PaddleOcrService({ model, debugging: { verbose: false } });
           await svc.initialize();
-          this.service = svc;
-          logger.info('PaddleOCRProvider: ready');
+          this.services.set(script, svc);
+          logger.info('PaddleOCRProvider: ready', { script });
         } catch (error) {
           // Don't cache a failed init. The ONNX models are downloaded on the
           // first request, so a transient network blip here would otherwise
           // disable OCR for the life of the container (community #57). Clear
           // the promise so the next call retries the download.
-          this.initPromise = null;
+          this.initPromises.delete(script);
           logger.error('PaddleOCRProvider: failed to initialize ONNX models', {
+            script,
             error: error instanceof Error ? error.message : String(error),
           });
           throw error;
         }
-      })();
+      })());
     }
-    await this.initPromise;
-    return this.service!;
+    await this.initPromises.get(script);
+    return this.services.get(script)!;
+  }
+
+  /**
+   * Recognise text with the model for `script`, then fold Cyrillic look-alike
+   * letters back to Latin in MRZ lines and number tokens ("АА1234567" → "AA1234567").
+   */
+  private async recognizeWith(script: OcrScript, buffer: Buffer): Promise<PaddleOcrResult> {
+    const svc = await this.ensureInitialized(script);
+    const result: PaddleOcrResult = await svc.recognize(new Uint8Array(buffer).buffer);
+    if (script === 'latin') return result;
+    return {
+      ...result,
+      text: result.text.split('\n').map(foldLatinLookalikes).join('\n'),
+      lines: result.lines.map(line => line.map(item => ({ ...item, text: foldLatinLookalikes(item.text) }))),
+    };
   }
 
   async processDocument(buffer: Buffer, documentType: string, issuingCountry?: string, llmConfig?: LLMProviderConfig): Promise<OCRData> {
-    const svc         = await this.ensureInitialized();
-    const arrayBuffer = new Uint8Array(buffer).buffer;
-    const result: PaddleOcrResult = await svc.recognize(arrayBuffer);
+    let script = scriptForCountry(issuingCountry);
+    let result = await this.recognizeWith(script, buffer);
+    let detectedBulgarian = false;
+
+    // No country given, but the Latin read shows a Bulgarian document (title,
+    // MRZ issuing state, nationality): read it again with the Cyrillic model.
+    if (!issuingCountry && script === 'latin' && looksBulgarian(result.text) && scriptForCountry('BG') === 'cyrillic') {
+      try {
+        result = await this.recognizeWith('cyrillic', buffer);
+        script = 'cyrillic';
+        detectedBulgarian = true;
+        logger.info('PaddleOCR: Bulgarian document detected — re-read with the Cyrillic model');
+      } catch (err) {
+        logger.warn('PaddleOCR: Cyrillic model unavailable, keeping the Latin read', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
     const ocrData: OCRData = {
       raw_text:          result.text,
       confidence_scores: {},
+      ocr_script:        script,
     };
 
     // Auto-classify document type if not specified
@@ -344,7 +387,7 @@ export class PaddleOCRProvider implements OCRProvider {
     }
 
     // Country-aware routing: use international extraction for non-US countries
-    let country = issuingCountry?.toUpperCase();
+    let country = issuingCountry?.toUpperCase() ?? (detectedBulgarian ? 'BG' : undefined);
     // UK driving licences have no MRZ, so the country can't be auto-detected from a
     // checksum. When the caller supplies none, detect a UK DL from the text and route
     // to GB so the UK extractor runs instead of the default (US) path.
@@ -361,7 +404,17 @@ export class PaddleOCRProvider implements OCRProvider {
     const effectiveFormat = countryFormat
       ?? (country && country !== 'US' ? getGenericEUFormat(resolvedDocType) : null);
 
-    if (country && country !== 'US' && effectiveFormat) {
+    if (country === 'BG') {
+      // Dedicated Bulgarian extractor: bilingual labels, Cyrillic + Latin names, ЕГН
+      const callerType = documentType && documentType !== 'auto' ? documentType : undefined;
+      const extraction = extractBulgarianDocument(this.flattenLines(result.lines), callerType);
+      applyBulgarianExtraction(ocrData, extraction);
+      logger.info('PaddleOCR Bulgarian extraction', {
+        script,
+        layout: extraction.layout,
+        fields: Object.keys(extraction.fields),
+      });
+    } else if (country && country !== 'US' && effectiveFormat) {
       if (!countryFormat) {
         logger.info('PaddleOCR: no country entry, using generic EU layout', {
           country, documentType: resolvedDocType,
@@ -417,8 +470,11 @@ export class PaddleOCRProvider implements OCRProvider {
       }
     }
 
-    // Store detected document type (from auto-classification or user-provided)
-    if (classificationResult) {
+    // Store detected document type (from auto-classification or user-provided).
+    // The Bulgarian extractor sets it from its own layout detection.
+    if (country === 'BG' && ocrData.detected_document_type) {
+      // keep the layout-based type
+    } else if (classificationResult) {
       ocrData.detected_document_type = classificationResult.type;
       ocrData.classification_confidence = classificationResult.confidence;
     } else if (resolvedDocType === 'passport' || resolvedDocType === 'drivers_license' || resolvedDocType === 'national_id') {
