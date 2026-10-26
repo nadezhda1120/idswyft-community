@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────────────
+# Idswyft stateless verification — no database, no sessions, no stored images
+# ─────────────────────────────────────────────────
+# One request carries the front, back and live capture; the response carries the
+# extracted fields and the decision. Nothing is written to a database or to disk.
+#
+#   docker compose -f docker-compose.stateless.yml up -d --build
+#   curl -H "X-API-Key: $STATELESS_API_KEYS" \
+#        -F front=@front.jpg -F back=@back.jpg -F issuing_country=BG \
+#        http://localhost:3003/v1/verify
+#
+# Horizontal scaling: run any number of `verify` (and `engine`) replicas behind a
+# load balancer instead of the fixed host port below. Replicas share nothing; set
+# STATELESS_CHALLENGE_SECRET so all of them accept the same liveness challenge tokens.
+# ─────────────────────────────────────────────────
+
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: engine/Dockerfile
+      args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    image: idswyft-engine-bg:local
+    restart: unless-stopped
+    mem_limit: 2g
+    environment:
+      NODE_ENV: production
+      PORT: "3002"
+      LOG_LEVEL: info
+      LOG_REDACT_PII: "true"
+      ENGINE_API_KEY: "${ENGINE_API_KEY:-}"
+      OCR_CYRILLIC_ENABLED: "${OCR_CYRILLIC_ENABLED:-true}"
+      OCR_DEFAULT_SCRIPT: "${OCR_DEFAULT_SCRIPT:-latin}"
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  verify:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: idswyft-stateless:local
+    restart: unless-stopped
+    command: ["node", "dist/stateless/server.js"]
+    environment:
+      NODE_ENV: production
+      PORT: "3003"
+      LOG_LEVEL: info
+      ENGINE_URL: http://engine:3002
+      ENGINE_API_KEY: "${ENGINE_API_KEY:-}"
+      ENGINE_TIMEOUT: "120000"
+      STATELESS_API_KEYS: "${STATELESS_API_KEYS:?set STATELESS_API_KEYS in .env}"
+      STATELESS_CHALLENGE_SECRET: "${STATELESS_CHALLENGE_SECRET:-}"
+      STATELESS_REQUIRE_CHALLENGE: "${STATELESS_REQUIRE_CHALLENGE:-false}"
+    # Nothing in this service writes files: a read-only root makes that a guarantee
+    read_only: true
+    tmpfs:
+      - /tmp
+    ports:
+      - "3003:3003"
+    depends_on:
+      engine:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3003/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

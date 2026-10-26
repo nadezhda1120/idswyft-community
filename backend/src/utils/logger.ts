@@ -1,9 +1,21 @@
 import winston from 'winston';
-import config from '@/config/index.js';
+import { redactLogEntry } from '@idswyft/shared';
 
+// Read NODE_ENV directly rather than through @/config: the logger must load
+// without the API's secrets so the stateless server can use it.
+const nodeEnv = process.env.NODE_ENV || 'development';
+
+// LOG_REDACT_PII=true: strip names, numbers, dates, MRZ text and images from every entry
+const redact = winston.format(info => (process.env.LOG_REDACT_PII === 'true' ? redactLogEntry(info) : info));
+
+// LOG_FILES=false: stdout only (containers, stateless server)
+const writeFiles = nodeEnv === 'production' && process.env.LOG_FILES !== 'false';
+
+// The logger-level format runs before any transport format, so redaction here covers every transport
 const logFormat = winston.format.combine(
   winston.format.timestamp(),
   winston.format.errors({ stack: true }),
+  redact(),
   winston.format.json()
 );
 
@@ -21,16 +33,16 @@ export const logger = winston.createLogger({
   format: logFormat,
   defaultMeta: {
     service: 'idswyft-api',
-    environment: config.nodeEnv
+    environment: nodeEnv
   },
   transports: [
     // Console transport for development
     new winston.transports.Console({
-      format: config.nodeEnv === 'development' ? consoleFormat : logFormat
+      format: nodeEnv === 'development' ? consoleFormat : logFormat
     }),
     
     // File transports for production
-    ...(config.nodeEnv === 'production' ? [
+    ...(writeFiles ? [
       new winston.transports.File({ 
         filename: 'logs/error.log', 
         level: 'error',
@@ -48,14 +60,14 @@ export const logger = winston.createLogger({
   // Handle exceptions and rejections
   exceptionHandlers: [
     new winston.transports.Console(),
-    ...(config.nodeEnv === 'production' ? [
+    ...(writeFiles ? [
       new winston.transports.File({ filename: 'logs/exceptions.log' })
     ] : [])
   ],
   
   rejectionHandlers: [
     new winston.transports.Console(),
-    ...(config.nodeEnv === 'production' ? [
+    ...(writeFiles ? [
       new winston.transports.File({ filename: 'logs/rejections.log' })
     ] : [])
   ]

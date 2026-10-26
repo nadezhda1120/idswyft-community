@@ -340,7 +340,9 @@ export class PaddleOCRProvider implements OCRProvider {
    */
   private async recognizeWith(script: OcrScript, buffer: Buffer): Promise<PaddleOcrResult> {
     const svc = await this.ensureInitialized(script);
-    const result: PaddleOcrResult = await svc.recognize(new Uint8Array(buffer).buffer);
+    // noCache: the library otherwise keeps the last 10 results (the card's text) in a
+    // process-wide LRU cache across requests.
+    const result = await svc.recognize(new Uint8Array(buffer).buffer, { noCache: true }) as PaddleOcrResult;
     if (script === 'latin') return result;
     return {
       ...result,

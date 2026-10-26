@@ -1,10 +1,15 @@
 import winston from 'winston';
+import { redactLogEntry } from '@idswyft/shared';
 
 const nodeEnv = process.env.NODE_ENV || 'development';
+
+// LOG_REDACT_PII=true: strip names, numbers, dates, MRZ text and images from every entry
+const redact = winston.format(info => (process.env.LOG_REDACT_PII === 'true' ? redactLogEntry(info) : info));
 
 const logFormat = winston.format.combine(
   winston.format.timestamp(),
   winston.format.errors({ stack: true }),
+  redact(),
   winston.format.json()
 );
 

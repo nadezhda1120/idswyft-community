@@ -9,16 +9,19 @@ const logger = {
   verbose: noop,
 };
 
+// winston.format is both a factory (winston.format(fn)) and a namespace of formats
+const format = Object.assign(() => () => ({}), {
+  combine: () => ({}),
+  timestamp: () => ({}),
+  errors: () => ({}),
+  json: () => ({}),
+  colorize: () => ({}),
+  printf: () => ({}),
+});
+
 const winston = {
   createLogger: () => logger,
-  format: {
-    combine: () => ({}),
-    timestamp: () => ({}),
-    errors: () => ({}),
-    json: () => ({}),
-    colorize: () => ({}),
-    printf: () => ({}),
-  },
+  format,
   transports: {
     Console: transport,
     File: transport,
