@@ -16,7 +16,7 @@
  * Pure and deterministic — no I/O, no model calls.
  */
 
-import { parseEgn, normalizeEgn, findEgnInText, classifyPersonalNumber } from './egn.js';
+import { parseEgn, normalizeEgn, findEgnInText, classifyPersonalNumber, egnMatchesDate } from './egn.js';
 import {
   transliterateBulgarian, hasCyrillic, foldLatinLookalikes, foldCyrillicLookalikes,
 } from './transliteration.js';
@@ -704,7 +704,10 @@ export function extractBulgarianDocument(rawLines: BgOcrLine[], documentTypeHint
     fields.personal_number_type = personalNumberType(fields.personal_number, layout.document, fields.nationality);
     if (!fields.date_of_birth && info.valid && info.date_of_birth) set('date_of_birth', info.date_of_birth, 0.9);
     if (!fields.sex && info.valid && info.sex) set('sex', info.sex, 0.9);
-    if (info.valid && fields.date_of_birth) fields.personal_number_matches_dob = info.date_of_birth === fields.date_of_birth;
+    // Compared from the date digits even when the checksum fails: a wrong check
+    // digit must not hide a date-of-birth mismatch.
+    const dobMatch = egnMatchesDate(fields.personal_number, fields.date_of_birth as string | undefined);
+    if (dobMatch !== null) fields.personal_number_matches_dob = dobMatch;
     if (info.valid && fields.sex) fields.personal_number_matches_sex = info.sex === fields.sex;
   }
 
@@ -832,5 +835,21 @@ export function crossCheckBulgarianMrz(ocrData: Record<string, any>, mrz: BgMrzF
     if (!visual || !machine) continue;
     checks[field] = mrzNorm(visual) === mrzNorm(machine);
   }
+
+  // ЕГН vs MRZ date of birth, directly (not only through front DOB = MRZ DOB).
+  const egn = typeof ocrData.personal_number === 'string' ? ocrData.personal_number : '';
+  const egnVsMrzDob = egnMatchesDate(egn, mrz.date_of_birth);
+  if (egnVsMrzDob !== null) checks.personal_number_vs_mrz_date_of_birth = egnVsMrzDob;
+  // The MRZ's own ЕГН, when the front printed a different one.
+  if (mrzEgn && mrzEgn !== normalizeEgn(egn)) {
+    const mrzEgnVsMrzDob = egnMatchesDate(mrzEgn, mrz.date_of_birth);
+    if (mrzEgnVsMrzDob !== null) checks.mrz_personal_number_vs_mrz_date_of_birth = mrzEgnVsMrzDob;
+  }
+  // ЕГН taken from the MRZ above: compare it with the front date of birth too.
+  if (ocrData.personal_number_matches_dob === undefined) {
+    const egnVsFrontDob = egnMatchesDate(egn, ocrData.date_of_birth);
+    if (egnVsFrontDob !== null) ocrData.personal_number_matches_dob = egnVsFrontDob;
+  }
+
   if (Object.keys(checks).length > 0) ocrData.mrz_cross_check = checks;
 }

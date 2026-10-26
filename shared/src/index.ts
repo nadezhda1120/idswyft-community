@@ -64,7 +64,7 @@ export { OpenAIProvider } from './providers/ocr/OpenAIProvider.js';
 // Bulgarian documents (Cyrillic, ЕГН, layouts)
 export {
   transliterateBulgarian, hasCyrillic, foldLatinLookalikes, foldCyrillicLookalikes,
-  parseEgn, normalizeEgn, egnChecksumValid, egnBirthDate, egnSex, findEgnInText,
+  parseEgn, normalizeEgn, egnChecksumValid, egnBirthDate, egnSex, egnMatchesDate, findEgnInText,
   lnchChecksumValid, classifyPersonalNumber,
   extractBulgarianDocument, applyBulgarianExtraction, identifyBulgarianLayout,
   parseBgDate, parseBgDocumentNumber, crossCheckBulgarianMrz, formatBulgarianDocument,

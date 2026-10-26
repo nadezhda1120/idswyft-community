@@ -56,6 +56,17 @@ export function egnSex(egn: string): 'M' | 'F' | null {
   return Number(egn[8]) % 2 === 0 ? 'M' : 'F';
 }
 
+/**
+ * Does the ЕГН encode this date of birth (YYYY-MM-DD)? Only the first six digits are
+ * used, so the comparison still runs when the checksum digit is misread or wrong.
+ * Null when either side is missing or the ЕГН holds no real date.
+ */
+export function egnMatchesDate(value: string | null | undefined, date: string | null | undefined): boolean | null {
+  if (!value || !date) return null;
+  const encoded = egnBirthDate(normalizeEgn(value));
+  return encoded === null ? null : encoded === date;
+}
+
 /** Validate an ЕГН and decode what it carries. */
 export function parseEgn(value: string): EgnInfo {
   const egn = normalizeEgn(value);

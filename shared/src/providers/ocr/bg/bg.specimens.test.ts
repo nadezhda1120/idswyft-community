@@ -83,6 +83,20 @@ describe('Wikimedia specimen — 2010 ID card front', () => {
     expect(fields.personal_number_valid).toBe(false)
   })
 
+  it('still compares the ЕГН date with the date of birth when the checksum fails', () => {
+    expect(fields.personal_number_matches_dob).toBe(true)
+  })
+
+  it('compares the ЕГН with the MRZ date of birth', () => {
+    const ocr: Record<string, any> = { raw_text: '' }
+    applyBulgarianExtraction(ocr, extractBulgarianDocument(FRONT_2010))
+    // MRZ of the specimen back: 8508018F1908011BGR8508010133<1
+    crossCheckBulgarianMrz(ocr, { date_of_birth: '1985-08-01', personal_number: '8508010133' })
+    expect(ocr.mrz_cross_check).toMatchObject({
+      date_of_birth: true, personal_number: true, personal_number_vs_mrz_date_of_birth: true,
+    })
+  })
+
   it('builds a clean full name', () => {
     const ocr: Record<string, any> = { raw_text: '' }
     applyBulgarianExtraction(ocr, extractBulgarianDocument(FRONT_2010))

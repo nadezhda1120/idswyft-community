@@ -2,7 +2,7 @@ export {
   transliterateBulgarian, hasCyrillic, foldLatinLookalikes, foldCyrillicLookalikes,
 } from './transliteration.js';
 export {
-  parseEgn, normalizeEgn, egnChecksumValid, egnBirthDate, egnSex, findEgnInText,
+  parseEgn, normalizeEgn, egnChecksumValid, egnBirthDate, egnSex, egnMatchesDate, findEgnInText,
   lnchChecksumValid, classifyPersonalNumber,
 } from './egn.js';
 export type { EgnInfo } from './egn.js';

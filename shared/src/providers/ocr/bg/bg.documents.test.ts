@@ -67,6 +67,7 @@ describe('Bulgarian passport (trilingual labels, TD3 MRZ)', () => {
     expect(ocr.mrz_cross_check).toEqual({
       document_number: true, date_of_birth: true, expiration_date: true,
       personal_number: true, sex: true, surname: true, given_names: true,
+      personal_number_vs_mrz_date_of_birth: true,
     })
     expect(ocr.detected_document_type).toBe('passport')
   })
