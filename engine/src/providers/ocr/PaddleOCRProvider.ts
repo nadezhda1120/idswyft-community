@@ -12,7 +12,7 @@ import {
 } from '@idswyft/shared';
 import { logger } from '@/utils/logger.js';
 import {
-  type OcrScript, getOcrModelPaths, getOcrDetectionOptions, scriptForCountry, looksBulgarian,
+  type OcrScript, getOcrModelPaths, getOcrDetectionOptions, scriptForCountry, looksBulgarian, describeOcrModel,
 } from '@/config/ocrModels.js';
 
 // ── Types ─────────────────────────────────────────────────────
@@ -308,6 +308,7 @@ export class PaddleOCRProvider implements OCRProvider {
           script,
           customDetection: !!model.detection,
           customRecognition: !!model.recognition,
+          recognitionModel: describeOcrModel(script),
           detection: getOcrDetectionOptions(),
         });
         try {
@@ -375,6 +376,7 @@ export class PaddleOCRProvider implements OCRProvider {
       raw_text:          result.text,
       confidence_scores: {},
       ocr_script:        script,
+      ocr_model:         describeOcrModel(script),
     };
 
     // Auto-classify document type if not specified

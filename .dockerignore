@@ -3,3 +3,5 @@ test-samples/
 **/node_modules
 **/dist
 .git
+# Training tools and data never enter the API or engine images
+training/

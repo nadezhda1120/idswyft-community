@@ -170,3 +170,12 @@ caddy/certs/*.crt
 
 # Local ID samples (may contain real scans), never commit
 test-samples/
+
+# Training data, runs and model files stay local (training/README.md)
+training/data/
+training/runs/
+training/reports/
+training/models/registry/
+engine/models/registry/
+**/__pycache__/
+.pytest_cache/
