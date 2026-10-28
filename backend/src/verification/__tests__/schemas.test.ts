@@ -296,8 +296,8 @@ describe('VerificationStatus enum', () => {
 });
 
 describe('RejectionReason enum', () => {
-  it('has exactly 16 reasons (12 original + 2 security + 2 voice)', () => {
-    expect(Object.keys(RejectionReason).length).toBe(16);
+  it('has exactly 17 reasons (12 original + 2 security + 2 voice + MRZ misread)', () => {
+    expect(Object.keys(RejectionReason).length).toBe(17);
   });
 
   it('includes all spec-defined reasons', () => {

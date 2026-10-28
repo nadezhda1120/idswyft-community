@@ -528,11 +528,15 @@ router.post('/back', upload.single('file'), async (req: Request, res: Response) 
       raw_lines: mrzResult!.raw_lines,
       fields: mrzResult!.fields as any,
       checksums_valid: mrzResult!.check_digits_valid,
+      // Which check digit failed, and OCR misreads fixed by position (confirmed by the check digits)
+      check_digits: mrzResult!.check_digits,
+      corrections: mrzResult!.corrections,
     } : (rawText && /[A-Z<]{30,}/.test(rawText) ? {
       raw_lines: rawText.split('\n').filter((l: string) => /^[A-Z0-9<]{30,}$/.test(l.trim())),
       // Unparsed MRZ-like text: Bulgarian cards always carry a parseable TD1, so an
       // unparsed one there is a misread, not a pass.
       checksums_valid: !isBulgarian,
+      parsed: false,
     } : null);
 
     const result: BackExtractionResult & { ocr?: Record<string, any> } = {

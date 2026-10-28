@@ -69,7 +69,7 @@ describe('Gate 2 — Back Document Integrity', () => {
     expect(result.passed).toBe(true);
   });
 
-  it('FAILS with BACK_MRZ_CHECKSUM_FAILED when MRZ checksums are invalid', () => {
+  it('FAILS with BACK_MRZ_UNREADABLE (retake) when checksums fail and no field contradicts the front', () => {
     const back = makeBackResult({
       mrz_result: {
         raw_lines: ['P<USADOE<<JOHN...', 'AB12345679USA9001150M3012310...'],
@@ -78,7 +78,8 @@ describe('Gate 2 — Back Document Integrity', () => {
     });
     const result = evaluateGate2(back, makeFrontResult());
     expect(result.passed).toBe(false);
-    expect(result.rejection_reason).toBe('BACK_MRZ_CHECKSUM_FAILED');
+    expect(result.rejection_reason).toBe('BACK_MRZ_UNREADABLE');
+    expect(result.user_message).toMatch(/retake/i);
   });
 
   it('FAILS with BACK_MRZ_BARCODE_MISMATCH when front MRZ and back MRZ disagree', () => {
@@ -191,7 +192,7 @@ describe('Gate 2 — Back Document Integrity', () => {
 
     const result = evaluateGate2(back, makeFrontResult(), 'DE');
     expect(result.passed).toBe(false);
-    expect(result.rejection_reason).toBe('BACK_MRZ_CHECKSUM_FAILED');
+    expect(result.rejection_reason).toBe('BACK_MRZ_UNREADABLE');
   });
 
   it('treats null issuingCountry as US (backward compatibility)', () => {
@@ -206,5 +207,63 @@ describe('Gate 2 — Back Document Integrity', () => {
     const result = evaluateGate2(back, makeFrontResult(), undefined);
     expect(result.passed).toBe(false);
     expect(result.rejection_reason).toBe('BACK_BARCODE_NOT_FOUND');
+  });
+});
+
+describe('Gate 2 — MRZ misread vs tampering', () => {
+  // SYNTHETIC values. Front: AB1234567, born 1990-01-15, expires 2030-12-31.
+  const mrz = (fields: Record<string, string>, check_digits: Record<string, boolean>, extra: Record<string, unknown> = {}) =>
+    makeBackResult({
+      qr_payload: null, barcode_format: 'MRZ_TD1', raw_barcode_data: null,
+      mrz_result: { raw_lines: ['L1', 'L2', 'L3'], checksums_valid: false, fields, check_digits, ...extra } as any,
+    });
+
+  it('a misread date of birth (its own check digit fails) asks for a retake, not tampering', () => {
+    const back = mrz(
+      { document_number: 'AB1234567', date_of_birth: '1990-01-18', expiry_date: '2030-12-31' },
+      { document_number: true, date_of_birth: false, expiry_date: true, composite: false },
+    );
+    const result = evaluateGate2(back, makeFrontResult(), 'BG');
+    expect(result.rejection_reason).toBe('BACK_MRZ_UNREADABLE');
+    expect(result.rejection_detail).toContain('date_of_birth, composite');
+    expect(result.rejection_detail).toContain('document_number, expiry_date agree with the front');
+  });
+
+  it('only the composite check failing, all fields agreeing: retake', () => {
+    const back = mrz(
+      { document_number: 'AB1234567', date_of_birth: '1990-01-15', expiry_date: '2030-12-31' },
+      { document_number: true, date_of_birth: true, expiry_date: true, composite: false },
+    );
+    expect(evaluateGate2(back, makeFrontResult(), 'BG').rejection_reason).toBe('BACK_MRZ_UNREADABLE');
+  });
+
+  it('ignores the O/0 look-alike when comparing document numbers', () => {
+    const back = mrz(
+      { document_number: 'AA0O00000', date_of_birth: '1990-01-15' },
+      { document_number: true, date_of_birth: true, composite: false },
+    );
+    const front = makeFrontResult();
+    (front.ocr as Record<string, unknown>).id_number = 'AA0000000';
+    expect(evaluateGate2(back, front, 'BG').rejection_reason).toBe('BACK_MRZ_UNREADABLE');
+  });
+
+  it('a field that passed its own check digit but contradicts the front is still tampering', () => {
+    const back = mrz(
+      { document_number: 'AB1234567', date_of_birth: '1985-03-02', expiry_date: '2030-12-31' },
+      { document_number: true, date_of_birth: true, expiry_date: true, composite: false },
+    );
+    const result = evaluateGate2(back, makeFrontResult(), 'BG');
+    expect(result.rejection_reason).toBe('BACK_MRZ_CHECKSUM_FAILED');
+    expect(result.rejection_detail).toContain('date_of_birth contradict the front');
+  });
+
+  it('an MRZ found but not parseable asks for a retake', () => {
+    const back = mrz({}, {}, { parsed: false });
+    expect(evaluateGate2(back, makeFrontResult(), 'BG').rejection_reason).toBe('BACK_MRZ_UNREADABLE');
+  });
+
+  it('valid check digits still pass', () => {
+    const back = mrz({ document_number: 'AB1234567' }, { document_number: true }, { checksums_valid: true });
+    expect(evaluateGate2(back, makeFrontResult(), 'BG').passed).toBe(true);
   });
 });

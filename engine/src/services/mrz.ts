@@ -12,6 +12,7 @@
 import { parse as parseMRZ } from 'mrz';
 import type { ParseResult, MRZFormat } from 'mrz';
 import { logger } from '@/utils/logger.js';
+import { correctMrzLines, CHECK_DIGIT_NAMES } from './mrzCorrect.js';
 
 export interface MRZParseResult {
   format: MRZFormat;
@@ -30,6 +31,11 @@ export interface MRZParseResult {
     /** Personal / optional data (e.g. the Bulgarian ЕГН), fillers removed. */
     personal_number: string | null;
   };
+  /** Result of each check digit: document_number, date_of_birth, expiry_date, composite (+ personal_number in TD3) */
+  check_digits: Record<string, boolean>;
+  /** OCR misreads corrected by position and confirmed by the check digits ("line 2, col 4: O→0") */
+  corrections: string[];
+  /** The lines the fields come from (after corrections) */
   raw_lines: string[];
 }
 
@@ -37,18 +43,27 @@ export interface MRZParseResult {
 const MRZ_LINE_LENGTHS = new Set([30, 36, 44]);
 
 /**
- * OCR often reads one filler too many or too few at the end of an MRZ line
- * ("IDBGRAA0O00OO00<<<<<<<<<<<<<<<<" — 31 chars). A line within one character of a
- * valid length that ends in fillers is trimmed / padded to that length; the
- * check digits still decide whether the result is accepted.
+ * OCR often reads fillers too many or too few at the end of an MRZ line
+ * ("IDBGRAA0O00OO00<<<<<<<<<<<<<<<<" — 31 chars), and reads runs of '<' as K/L
+ * ("IDBGRAA0000000KLKLKLKLKLKLKLKLLLK" — 33). Returns every valid length the line
+ * can be fitted to by trimming or padding its trailing run of fillers (or K/L
+ * read for them) — never by touching other characters. The check digits still
+ * decide whether a fitted block is accepted.
  */
-function fitMrzLength(line: string): string {
-  if (MRZ_LINE_LENGTHS.has(line.length) || !/^[A-Z0-9<]+$/.test(line)) return line;
+export function fitMrzLengths(line: string): Map<number, string> {
+  const out = new Map<number, string>();
+  if (!/^[A-Z0-9<]+$/.test(line)) return out;
+  if (MRZ_LINE_LENGTHS.has(line.length)) out.set(line.length, line);
+  const tail = /[<KL]*$/.exec(line)![0].length;
   for (const len of MRZ_LINE_LENGTHS) {
-    if (line.length === len + 1 && line.endsWith('<<')) return line.slice(0, len);
-    if (line.length === len - 1 && line.endsWith('<')) return line + '<';
+    if (out.has(len)) continue;
+    const excess = line.length - len;
+    // Trim: everything cut is part of the trailing filler run, and something of the run stays
+    if (excess > 0 && excess <= 12 && tail > excess) out.set(len, line.slice(0, len));
+    // Pad: up to 3 missing fillers on a line that ends in one
+    if (excess < 0 && excess >= -3 && tail >= 1) out.set(len, line + '<'.repeat(-excess));
   }
-  return line;
+  return out;
 }
 
 /**
@@ -62,28 +77,20 @@ export function detectMRZInText(rawText: string): string[] | null {
   const lines = rawText.split('\n').map(l => l.trim());
   const mrzCandidates: string[] = [];
 
-  for (const line of lines) {
-    // MRZ lines: uppercase letters, digits, and < filler only
-    const cleaned = fitMrzLength(line.replace(/\s/g, ''));
-    if (cleaned.length >= 30 && /^[A-Z0-9<]+$/.test(cleaned) && MRZ_LINE_LENGTHS.has(cleaned.length)) {
-      mrzCandidates.push(cleaned);
+  // MRZ lines: uppercase letters, digits, and < filler only; each line may fit
+  // several lengths, so look for a consistent block per format
+  const fitted = lines.map(line => fitMrzLengths(line.replace(/\s/g, '')));
+  if (fitted.filter(f => f.size > 0).length < 2) return null;
+
+  // TD1 = 3 lines of 30, TD2 = 2 lines of 36, TD3 = 2 lines of 44.
+  // Lines read at their exact length win; fitted lengths are the fallback.
+  for (const exactOnly of [true, false]) {
+    for (const [len, count] of [[30, 3], [36, 2], [44, 2]] as const) {
+      const group = fitted
+        .map(f => f.get(len))
+        .filter((l, i): l is string => !!l && (!exactOnly || lines[i].replace(/\s/g, '').length === len));
+      if (group.length >= count) return group.slice(0, count);
     }
-  }
-
-  if (mrzCandidates.length < 2) return null;
-
-  // Group by line length to find consistent MRZ blocks
-  const byLength = new Map<number, string[]>();
-  for (const line of mrzCandidates) {
-    const len = line.length;
-    if (!byLength.has(len)) byLength.set(len, []);
-    byLength.get(len)!.push(line);
-  }
-
-  // TD1 = 3 lines of 30, TD2 = 2 lines of 36, TD3 = 2 lines of 44
-  for (const [len, group] of byLength) {
-    if (len === 30 && group.length >= 3) return group.slice(0, 3);
-    if ((len === 36 || len === 44) && group.length >= 2) return group.slice(0, 2);
   }
 
   return null;
@@ -95,7 +102,7 @@ export function detectMRZInText(rawText: string): string[] | null {
  */
 export function parseMRZLines(lines: string[]): MRZParseResult | null {
   try {
-    const result: ParseResult = bestDocumentNumberVariant(lines, parseMRZ(lines, { autocorrect: true }));
+    const { result, lines: used, changes } = bestReading(lines);
 
     const fields = result.fields;
 
@@ -103,6 +110,8 @@ export function parseMRZLines(lines: string[]): MRZParseResult | null {
       format: result.format,
       valid: result.valid,
       check_digits_valid: result.valid,
+      check_digits: checkDigitResults(result),
+      corrections: changes,
       fields: {
         document_number: fields.documentNumber ?? null,
         first_name: fields.firstName ?? null,
@@ -115,7 +124,7 @@ export function parseMRZLines(lines: string[]): MRZParseResult | null {
         sex: fields.sex ?? null,
         personal_number: personalNumberFrom(fields as Record<string, unknown>),
       },
-      raw_lines: lines,
+      raw_lines: used,
     };
   } catch (error) {
     logger.warn('MRZ parsing failed', {
@@ -127,40 +136,103 @@ export function parseMRZLines(lines: string[]): MRZParseResult | null {
   }
 }
 
+const validCount = (r: ParseResult) => r.details.filter(d => d.valid).length;
+
+/** Each check digit's result, by API name. */
+function checkDigitResults(result: ParseResult): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const d of result.details) {
+    const name = CHECK_DIGIT_NAMES[d.field as string];
+    if (name) out[name] = d.valid;
+  }
+  return out;
+}
+
 /**
- * OCR often confuses O and 0 in the document number, which the `mrz` autocorrect
- * cannot fix because document numbers may contain letters (e.g. Bulgarian
- * "AA0O00OO0"). When the check digits fail, try every O/0 combination in the
- * document number field and keep the variant with the most valid check digits.
- * Deterministic: the check digits decide, never a guess.
+ * OCR often confuses O and 0 (and D or Q for 0) in the document number, which the
+ * `mrz` autocorrect cannot fix because document numbers may contain letters (e.g.
+ * Bulgarian "AA0O00OO0"). When the check digits fail, try every 0/letter
+ * combination in the document number field and keep the variant with the most
+ * valid check digits. Deterministic: the check digits decide, never a guess.
  */
-function bestDocumentNumberVariant(lines: string[], original: ParseResult): ParseResult {
-  if (original.valid) return original;
+function bestDocumentNumberVariant(lines: string[], original: ParseResult): { result: ParseResult; lines: string[] } {
+  if (original.valid) return { result: original, lines };
   const row = lines.length === 3 ? 0 : 1;   // TD1: line 1, TD2/TD3: line 2
   const start = lines.length === 3 ? 5 : 0;
   const line = lines[row] ?? '';
   // The 9-character number and its check digit (a check digit is always numeric).
   const positions = [...line.slice(start, start + 10)]
-    .map((c, i) => (c === 'O' || c === '0' ? start + i : -1))
+    .map((c, i) => ('O0DQ'.includes(c) ? start + i : -1))
     .filter(i => i >= 0)
     .slice(0, 10);
-  if (positions.length === 0) return original;
+  if (positions.length === 0) return { result: original, lines };
 
-  const validCount = (r: ParseResult) => r.details.filter(d => d.valid).length;
-  let best = original;
+  let best = { result: original, lines };
   for (let mask = 0; mask < 1 << positions.length; mask++) {
     const chars = [...line];
-    positions.forEach((p, bit) => { chars[p] = mask & (1 << bit) ? 'O' : '0'; });
+    positions.forEach((p, bit) => {
+      const read = line[p];
+      chars[p] = mask & (1 << bit) ? (read === '0' ? 'O' : read) : '0';
+    });
     const candidate = chars.join('');
     if (candidate === line) continue;
     try {
       const variant = [...lines];
       variant[row] = candidate;
       const parsed = parseMRZ(variant, { autocorrect: true });
-      if (validCount(parsed) > validCount(best)) best = parsed;
-      if (best.valid) break;
+      if (validCount(parsed) > validCount(best.result)) best = { result: parsed, lines: variant };
+      if (best.result.valid) break;
     } catch { /* variant not parseable */ }
   }
+  return best;
+}
+
+/** The `mrz` library's own autocorrections (letters in digit fields), applied to the lines and listed. */
+function applyLibraryCorrections(lines: string[], result: ParseResult): { lines: string[]; changes: string[] } {
+  const out = lines.map(l => [...l]);
+  const changes: string[] = [];
+  for (const d of result.details) {
+    for (const c of (d as { autocorrect?: Array<{ line: number; column: number; original: string; corrected: string }> }).autocorrect ?? []) {
+      if (out[c.line]?.[c.column] !== c.original) continue;
+      out[c.line][c.column] = c.corrected;
+      changes.push(`line ${c.line + 1}, col ${c.column + 1}: ${c.original}→${c.corrected}`);
+    }
+  }
+  return { lines: out.map(l => l.join('')), changes };
+}
+
+/**
+ * Parse the lines as read, corrected by position, and corrected with digits in
+ * the optional data; keep the reading with the most valid check digits (the
+ * earliest on a tie, i.e. the fewest changes). Corrections are reported.
+ */
+function bestReading(lines: string[]): { result: ParseResult; lines: string[]; changes: string[] } {
+  const readings = [
+    { lines, changes: [] as string[] },
+    correctMrzLines(lines),
+    correctMrzLines(lines, { optionalDigits: true }),
+  ];
+  let best: { result: ParseResult; lines: string[]; changes: string[] } | null = null;
+  const seen = new Set<string>();
+  for (const reading of readings) {
+    const key = reading.lines.join('\n');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let parsed: { result: ParseResult; lines: string[] };
+    try {
+      parsed = bestDocumentNumberVariant(reading.lines, parseMRZ(reading.lines, { autocorrect: true }));
+    } catch {
+      continue;
+    }
+    if (!best || validCount(parsed.result) > validCount(best.result)) {
+      const extra = parsed.lines.flatMap((l, li) => [...l].flatMap((ch, i) =>
+        ch !== reading.lines[li][i] ? [`line ${li + 1}, col ${i + 1}: ${reading.lines[li][i]}→${ch}`] : []));
+      const library = applyLibraryCorrections(parsed.lines, parsed.result);
+      best = { result: parsed.result, lines: library.lines, changes: [...reading.changes, ...extra, ...library.changes] };
+    }
+    if (best.result.valid) break;
+  }
+  if (!best) throw new Error('MRZ could not be parsed');
   return best;
 }
 

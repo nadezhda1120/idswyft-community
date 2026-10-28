@@ -4,7 +4,11 @@
  * FAIL if:
  *   - US document: No barcode found (qr_payload is null) AND no MRZ
  *   - Non-US document: Neither barcode NOR MRZ found
- *   - MRZ checksums failed (checksums_valid === false)
+ *   - MRZ checksums failed (checksums_valid === false):
+ *       BACK_MRZ_UNREADABLE when the failure is explained by reading — the MRZ could
+ *         not be parsed, or every MRZ field whose own check digit passed agrees with
+ *         the front — so the user is asked to retake the photo;
+ *       BACK_MRZ_CHECKSUM_FAILED when such a field contradicts the front
  *   - Front MRZ and back MRZ disagree (BACK_MRZ_BARCODE_MISMATCH)
  *
  * PASS if:
@@ -13,6 +17,43 @@
  */
 
 import type { BackExtractionResult, FrontExtractionResult, GateResult } from '@idswyft/shared';
+
+type MrzForGate = NonNullable<BackExtractionResult['mrz_result']> & {
+  check_digits?: Record<string, boolean>;
+  parsed?: boolean;
+};
+
+/** MRZ fields with their own check digit, and where the front keeps the same value */
+const CHECKED_FIELDS: Array<{ mrz: string; front: string[]; date: boolean }> = [
+  { mrz: 'document_number', front: ['id_number', 'document_number'], date: false },
+  { mrz: 'date_of_birth', front: ['date_of_birth'], date: true },
+  { mrz: 'expiry_date', front: ['expiry_date', 'expiration_date'], date: true },
+];
+
+// Dates compare by digits; document numbers ignore the O/0 look-alike
+const normalize = (value: unknown, date: boolean) => {
+  const s = String(value ?? '').toUpperCase();
+  return date ? s.replace(/\D/g, '') : s.replace(/[^A-Z0-9]/g, '').replace(/O/g, '0');
+};
+
+/**
+ * Compare the MRZ with the front, using only fields whose own check digit passed
+ * (a field with a failed check digit is the unreliable one). Deterministic.
+ */
+export function mrzAgreementWithFront(mrz: MrzForGate, front: FrontExtractionResult) {
+  const ocr = (front.ocr ?? {}) as Record<string, unknown>;
+  const fields = (mrz.fields ?? {}) as Record<string, string | null | undefined>;
+  const agree: string[] = [];
+  const disagree: string[] = [];
+  for (const { mrz: key, front: frontKeys, date } of CHECKED_FIELDS) {
+    if (mrz.check_digits && mrz.check_digits[key] !== true) continue;
+    const mrzValue = normalize(fields[key], date);
+    const frontValue = normalize(frontKeys.map(k => ocr[k]).find(v => v), date);
+    if (!mrzValue || !frontValue) continue;
+    (mrzValue === frontValue ? agree : disagree).push(key);
+  }
+  return { agree, disagree };
+}
 
 export function evaluateGate2(
   back: BackExtractionResult,
@@ -47,10 +88,25 @@ export function evaluateGate2(
 
   // Check MRZ checksums if present
   if (back.mrz_result && !back.mrz_result.checksums_valid) {
+    const mrz = back.mrz_result as MrzForGate;
+    const failed = Object.entries(mrz.check_digits ?? {}).filter(([, ok]) => !ok).map(([name]) => name);
+    const failedText = failed.length ? `check digit(s) failed: ${failed.join(', ')}` : 'check digits failed';
+    const { agree, disagree } = mrzAgreementWithFront(mrz, front);
+
+    if (mrz.parsed === false || disagree.length === 0) {
+      return {
+        passed: false,
+        rejection_reason: 'BACK_MRZ_UNREADABLE',
+        rejection_detail: mrz.parsed === false
+          ? 'MRZ found but could not be parsed — treated as a misread'
+          : `MRZ ${failedText}; ${agree.length ? `${agree.join(', ')} agree with the front` : 'no checked field to compare'} — treated as a misread`,
+        user_message: 'We could not read the code at the bottom of the back of your ID clearly. Please retake the photo in good light, without glare, with the whole back of the card in focus.',
+      };
+    }
     return {
       passed: false,
       rejection_reason: 'BACK_MRZ_CHECKSUM_FAILED',
-      rejection_detail: 'MRZ checksum validation failed — possible physical tampering',
+      rejection_detail: `MRZ ${failedText}, and ${disagree.join(', ')} contradict the front — possible tampering`,
       user_message: 'We detected an issue with your document. Please ensure you are using an original, unaltered ID.',
     };
   }
