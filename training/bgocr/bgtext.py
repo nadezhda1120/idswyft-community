@@ -52,6 +52,62 @@ CITIES = ['СОФИЯ', 'ПЛОВДИВ', 'ВАРНА', 'БУРГАС', 'РУС�
           'ХАСКОВО', 'ПЕРНИК', 'ВЕЛИКО ТЪРНОВО', 'ГАБРОВО', 'КЮСТЕНДИЛ', 'ДОБРИЧ', 'СЛИВЕН']
 STREETS = ['ВАСИЛ ЛЕВСКИ', 'ХРИСТО БОТЕВ', 'ЦАР БОРИС III', 'ГЕН. ГУРКО', 'ШИПКА', 'ОБОРИЩЕ', 'ЧЕРНИ ВРЪХ',
            'ВИТОША', 'КНЯЗ БОРИС I', 'ИВАН ВАЗОВ', 'ЯВОРОВ', 'ЦАРИГРАДСКО ШОСЕ']
+
+# ── Addresses ("Постоянен адрес" on the back of the ID card) ─────────────────
+# Region (обл.) → municipality (общ.) → settlements (гр. town, с. village).
+# Real administrative names; street numbers and flats are random.
+ADDRESS_AREAS = [
+    ('СОФИЯ', 'СТОЛИЧНА', ['гр.СОФИЯ', 'с.ЛОЗЕН', 'с.ВЛАДАЯ']),
+    ('СОФИЯ', 'САМОКОВ', ['гр.САМОКОВ', 'с.ГОВЕДАРЦИ']),
+    ('ПЛОВДИВ', 'ПЛОВДИВ', ['гр.ПЛОВДИВ']),
+    ('ПЛОВДИВ', 'АСЕНОВГРАД', ['гр.АСЕНОВГРАД', 'с.БАЧКОВО']),
+    ('ВАРНА', 'ВАРНА', ['гр.ВАРНА', 'с.КАМЕНАР']),
+    ('БУРГАС', 'НЕСЕБЪР', ['гр.НЕСЕБЪР', 'гр.ОБЗОР', 'с.РАВДА']),
+    ('БУРГАС', 'БУРГАС', ['гр.БУРГАС']),
+    ('СТАРА ЗАГОРА', 'КАЗАНЛЪК', ['гр.КАЗАНЛЪК', 'гр.ШИПКА']),
+    ('ВЕЛИКО ТЪРНОВО', 'ВЕЛИКО ТЪРНОВО', ['гр.ВЕЛИКО ТЪРНОВО', 'с.АРБАНАСИ']),
+    ('РУСЕ', 'РУСЕ', ['гр.РУСЕ', 'с.НИКОЛОВО']),
+    ('ХАСКОВО', 'ДИМИТРОВГРАД', ['гр.ДИМИТРОВГРАД']),
+    ('БЛАГОЕВГРАД', 'БАНСКО', ['гр.БАНСКО', 'с.ДОБРИНИЩЕ']),
+    ('ГАБРОВО', 'ТРЯВНА', ['гр.ТРЯВНА']),
+    ('ШУМЕН', 'ШУМЕН', ['гр.ШУМЕН', 'с.МАДАРА']),
+]
+# Housing estates (ж.к.) and quarters (кв.)
+ESTATES = ['ж.к.ЛЮЛИН', 'ж.к.МЛАДОСТ 1', 'ж.к.МЛАДОСТ 3', 'ж.к.ДРУЖБА 2', 'ж.к.ТРАКИЯ', 'ж.к.ИЗГРЕВ',
+           'ж.к.ЧАЙКА', 'ж.к.МЕДЕН РУДНИК', 'ж.к.ВЪЗРАЖДАНЕ', 'кв.ЛОЗЕНЕЦ', 'кв.КЪРШИЯКА', 'кв.ВАРОША',
+           'кв.ЦЕНТЪР', 'кв.МАРАША']
+ENTRANCES = 'АБВГД'
+
+
+def _settlement_with_latin(settlement: str, rng: random.Random) -> str:
+    """Cards print the town in both alphabets: гр.СОФИЯ/SOFIA (villages usually Cyrillic only)."""
+    prefix, name = settlement.split('.', 1)
+    if prefix == 'гр' and rng.random() < 0.7:
+        return f'{settlement}/{transliterate_text(name)}'
+    return settlement
+
+
+def address(rng: random.Random) -> list[str]:
+    """
+    A permanent address as printed on the card, usually over two or three lines:
+      обл.СОФИЯ, общ.СТОЛИЧНА
+      гр.СОФИЯ/SOFIA
+      ж.к.ЛЮЛИН бл.405 вх.Б ет.7 ап.112      or      ул.ИВАН ВАЗОВ 63 ет.4 ап.12
+    """
+    region, municipality, settlements = rng.choice(ADDRESS_AREAS)
+    settlement = rng.choice(settlements)
+    sep = rng.choice([', ', ' '])
+    floor = f'ет.{rng.randrange(1, 16)}'
+    flat = f'ап.{rng.randrange(1, 140)}'
+    if settlement.startswith('с.') or rng.random() < 0.45:
+        street = f'{rng.choice(["ул.", "ул.", "бул."])}{rng.choice(STREETS)} {rng.randrange(1, 220)}'
+        parts = [street] + ([floor, flat] if rng.random() < 0.6 else [])
+    else:
+        parts = [rng.choice(ESTATES), f'бл.{rng.randrange(1, 520)}']
+        if rng.random() < 0.7:
+            parts.append(f'вх.{rng.choice(ENTRANCES)}')
+        parts += [floor, flat]
+    return [f'обл.{region}{sep}общ.{municipality}', _settlement_with_latin(settlement, rng), ' '.join(parts)]
 EYE_COLORS = [('КАФЯВИ', 'BROWN'), ('СИНИ', 'BLUE'), ('ЗЕЛЕНИ', 'GREEN'), ('СИВИ', 'GREY'), ('ЧЕРНИ', 'BLACK')]
 
 # Printed labels on Bulgarian identity documents (Cyrillic / English)
@@ -162,8 +218,9 @@ def sample_text(rng: random.Random, kind: str) -> str:
     if kind == 'label':
         return rng.choice(LABELS)
     if kind == 'address':
-        city = rng.choice(CITIES)
-        return rng.choice([f'обл.{city} общ.{city} гр.{city}', f'ул.{rng.choice(STREETS)} {rng.randrange(1, 200)} ет.{rng.randrange(1, 15)} ап.{rng.randrange(1, 90)}'])
+        # One printed line of an address, or the first two lines run together
+        lines = address(rng)
+        return rng.choice([lines[0], lines[1], lines[2], f'{lines[0]} {lines[1]}', ', '.join(lines[1:])])
     if kind == 'place':
         city = rng.choice(CITIES)
         return f'{city}/{transliterate_text(city)}'

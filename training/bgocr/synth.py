@@ -114,16 +114,23 @@ def synthetic_card(seed: int, fonts: list[str], side: str = 'front') -> tuple[Im
         city = rng.choice(bgtext.CITIES)
         rows = [
             ('Място на раждане/Place of birth', f'{city}/{bgtext.transliterate_text(city)}', 'place_of_birth'),
-            ('Постоянен адрес/Residence', f'обл.{city} общ.{city} гр.{city}', 'address'),
+            # Printed over three lines; each is its own annotated text line
+            ('Постоянен адрес/Residence', bgtext.address(rng), 'address'),
             ('Ръст/Height', str(rng.randrange(150, 200)), 'height'),
             ('Цвят на очите/Color of eyes', '/'.join(rng.choice(bgtext.EYE_COLORS)), 'eye_color'),
             ('Дата на издаване/Date of issue', bgtext.dmy(expiry - timedelta(days=3652)), 'issue_date'),
         ]
+        address_font = ImageFont.truetype(font_path, 24)
         y = 110
         for label, value, name in rows:
             put(label, (40, y), label_font, 'label')
-            put(value, (40, y + 22), value_font, name)
-            y += 62
+            if isinstance(value, list):
+                for i, line in enumerate(value):
+                    put(line, (40, y + 22 + i * 32), address_font, f'{name}_line{i + 1}')
+                y += 22 + 32 * len(value) + 8
+            else:
+                put(value, (40, y + 22), value_font, name)
+                y += 62
         layout.append({'label': 'text_block', 'points': [[30, 100], [980, 100], [980, y], [30, y]]})
         mono = ImageFont.truetype(next((f for f in fonts if 'ono' in f or 'cour' in f or 'consola' in f), font_path), 30)
         my = height - 125

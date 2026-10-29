@@ -150,3 +150,16 @@ def test_build_dataset_splits_by_document(tmp_path):
     assert manifest['sources'] == {'synthetic': 12} and manifest['documents']['test'] >= 1
     with open(tmp_path / 'ds' / 'doc_types.csv', encoding='utf-8') as f:
         assert f.readline().strip() == 'image,country,type,generation,side,split'
+
+
+def test_addresses_use_bulgarian_address_parts():
+    rng = random.Random(5)
+    lines = [bgtext.address(rng) for _ in range(300)]
+    assert all(len(a) == 3 for a in lines)
+    assert all(a[0].startswith('обл.') and 'общ.' in a[0] for a in lines)
+    assert all(a[1].startswith(('гр.', 'с.')) for a in lines)
+    text = ' '.join(' '.join(a) for a in lines)
+    for part in ('ул.', 'бул.', 'ж.к.', 'кв.', 'бл.', 'вх.', 'ет.', 'ап.', 'гр.', 'с.'):
+        assert part in text, part
+    # Towns carry the transliteration that is printed next to them
+    assert any(a[1] == 'гр.СОФИЯ/SOFIA' for a in lines)
