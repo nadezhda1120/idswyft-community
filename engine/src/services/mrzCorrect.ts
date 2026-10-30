@@ -113,3 +113,31 @@ export const CHECK_DIGIT_NAMES: Record<string, string> = {
   personalNumberCheckDigit: 'personal_number',
   compositeCheckDigit: 'composite',
 };
+
+/**
+ * Cyrillic letters a Cyrillic recognizer puts into MRZ lines, mapped to the Latin
+ * letter they stand for. Identical twins (А, В, Е …) plus shape look-alikes with
+ * no Latin twin: Л for L, И for a mirrored N, П for N. MRZ text is Latin only.
+ */
+const MRZ_CYRILLIC: Record<string, string> = {
+  А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', У: 'Y', Х: 'X',
+  І: 'I', Ј: 'J', Ѕ: 'S', Л: 'L', И: 'N', П: 'N', З: '3', Б: '6', Д: 'D', Г: 'F',
+};
+
+/**
+ * A line shaped like MRZ (25–46 characters without spaces, at least two '<',
+ * mostly A–Z, 0–9 and '<') with a few Cyrillic letters in it is returned with
+ * those letters mapped to Latin; any other line is returned unchanged. Without
+ * this, one "Л" read for "L" in a name made the whole MRZ undetectable. Numbers
+ * stay covered by the check digits; names have none, so a wrong letter there
+ * shows up as a name mismatch against the front and goes to review.
+ */
+export function latinizeMrzLine(line: string): string {
+  const compact = line.replace(/\s/g, '');
+  if (compact.length < 25 || compact.length > 46 || (compact.match(/</g) ?? []).length < 2) return line;
+  const cyrillic = compact.match(/[Ѐ-ӿ]/g) ?? [];
+  if (cyrillic.length === 0 || cyrillic.length > 4) return line;
+  const mrzLike = (compact.match(/[A-Z0-9<]/g) ?? []).length;
+  if (mrzLike + cyrillic.length < compact.length * 0.95) return line;
+  return line.toUpperCase().replace(/[Ѐ-ӿ]/g, ch => MRZ_CYRILLIC[ch] ?? ch);
+}

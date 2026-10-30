@@ -12,7 +12,7 @@
 import { parse as parseMRZ } from 'mrz';
 import type { ParseResult, MRZFormat } from 'mrz';
 import { logger } from '@/utils/logger.js';
-import { correctMrzLines, CHECK_DIGIT_NAMES } from './mrzCorrect.js';
+import { correctMrzLines, latinizeMrzLine, CHECK_DIGIT_NAMES } from './mrzCorrect.js';
 
 export interface MRZParseResult {
   format: MRZFormat;
@@ -74,8 +74,8 @@ export function fitMrzLengths(line: string): Map<number, string> {
 export function detectMRZInText(rawText: string): string[] | null {
   if (!rawText) return null;
 
-  const lines = rawText.split('\n').map(l => l.trim());
-  const mrzCandidates: string[] = [];
+  // A Cyrillic recognizer may put a Cyrillic letter into an MRZ line ("Л" for "L")
+  const lines = rawText.split('\n').map(l => latinizeMrzLine(l.trim()));
 
   // MRZ lines: uppercase letters, digits, and < filler only; each line may fit
   // several lengths, so look for a consistent block per format

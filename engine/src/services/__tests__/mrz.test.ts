@@ -4,7 +4,7 @@ vi.mock('@/utils/logger.js', () => ({ logger: { info: () => {}, warn: () => {}, 
 // mrz.ts re-exports alpha3ToAlpha2 from a module that imports the shared package
 vi.mock('@idswyft/shared', () => ({ transliterateBulgarian: (s: string) => s }));
 
-import { correctMrzLines } from '../mrzCorrect.js';
+import { correctMrzLines, latinizeMrzLine } from '../mrzCorrect.js';
 import { parseMRZLines, extractMRZFromText, fitMrzLengths } from '../mrz.js';
 
 // MRZ of the public Wikimedia specimen cards (fictitious holders). Both are valid.
@@ -100,5 +100,25 @@ describe('MRZ line length', () => {
   it('prefers lines read at their exact length', () => {
     const r = extractMRZFromText(BG_2010.join('\n'))!;
     expect(r.raw_lines).toEqual(BG_2010);
+  });
+});
+
+describe('Cyrillic letters in MRZ lines', () => {
+  it('maps a Cyrillic letter in a name line to Latin', () => {
+    expect(latinizeMrzLine('PETROV<<IЛIA<IVANOV<<<<<<<<<<<')).toBe('PETROV<<ILIA<IVANOV<<<<<<<<<<<');
+    expect(latinizeMrzLine('IVANOVA<<SЛAVINA<GEORGIEVA<<<<')).toBe('IVANOVA<<SLAVINA<GEORGIEVA<<<<');
+  });
+
+  it('leaves ordinary Cyrillic text alone', () => {
+    expect(latinizeMrzLine('Постоянен адрес/Residence обл.СОФИЯ')).toBe('Постоянен адрес/Residence обл.СОФИЯ');
+    expect(latinizeMrzLine('IVANOVA SLAVINA')).toBe('IVANOVA SLAVINA');
+  });
+
+  it('finds the TD1 block when one name line carries a Cyrillic letter', () => {
+    const text = [BG_2024[0], BG_2024[1], 'IVANOVA<<SЛAVINA<GEORGIEVA<<<<'].join('\n');
+    const r = extractMRZFromText(text)!;
+    expect(r.format).toBe('TD1');
+    expect(r.check_digits_valid).toBe(true);
+    expect(r.fields.first_name).toContain('SLAVINA');
   });
 });
