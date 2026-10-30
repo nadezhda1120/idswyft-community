@@ -118,11 +118,11 @@ export const CHECK_DIGIT_NAMES: Record<string, string> = {
  * Cyrillic letters a Cyrillic recognizer puts into MRZ lines, mapped to the Latin
  * letter they stand for. Identical twins (А, В, Е …) plus letters the model writes
  * for a Latin one it was not trained to prefer: И for I (seen on a real card:
- * "ИLIA" for ILIA), Л for L. MRZ text is Latin only.
+ * "ИLIA" for ILIA), Л for L, П for P. MRZ text is Latin only.
  */
 const MRZ_CYRILLIC: Record<string, string> = {
   А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', У: 'Y', Х: 'X',
-  І: 'I', Ј: 'J', Ѕ: 'S', И: 'I', Л: 'L', З: '3', Б: '6', Д: 'D', Г: 'F',
+  І: 'I', Ј: 'J', Ѕ: 'S', И: 'I', Л: 'L', П: 'P', З: '3', Б: '6', Д: 'D', Г: 'F',
 };
 
 /**

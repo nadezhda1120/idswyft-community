@@ -108,6 +108,7 @@ describe('Cyrillic letters in MRZ lines', () => {
     expect(latinizeMrzLine('PETROV<<IЛIA<IVANOV<<<<<<<<<<<')).toBe('PETROV<<ILIA<IVANOV<<<<<<<<<<<');
     // The Cyrillic model writes И for the Latin I (real card: "ИLIA")
     expect(latinizeMrzLine('PETROV<<ИLIA<IVANOV<<<<<<<<<<<')).toBe('PETROV<<ILIA<IVANOV<<<<<<<<<<<');
+    expect(latinizeMrzLine('ПETROV<<ILIA<IVANOV<<<<<<<<<<<')).toBe('PETROV<<ILIA<IVANOV<<<<<<<<<<<');
     expect(latinizeMrzLine('IVANOVA<<SЛAVINA<GEORGIEVA<<<<')).toBe('IVANOVA<<SLAVINA<GEORGIEVA<<<<');
   });
 
