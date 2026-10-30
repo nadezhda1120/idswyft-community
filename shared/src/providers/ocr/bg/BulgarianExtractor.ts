@@ -17,6 +17,7 @@
  */
 
 import { parseEgn, normalizeEgn, findEgnInText, classifyPersonalNumber, egnMatchesDate } from './egn.js';
+import { parseBulgarianLayout, type BgBox, type BgValueSource } from './layout.js';
 import {
   transliterateBulgarian, hasCyrillic, foldLatinLookalikes, foldCyrillicLookalikes,
 } from './transliteration.js';
@@ -44,6 +45,8 @@ export interface BgExtraction {
   layout: BgLayout;
   fields: Record<string, string | string[] | boolean | null | LicenceCategoryRow[]>;
   confidence_scores: Record<string, number>;
+  /** Where each ID-card value came from: the box layout ('inline' | 'right' | 'below') or the text parser */
+  sources?: Record<string, BgValueSource | 'text'>;
 }
 
 // ── Labels ────────────────────────────────────────────────────
@@ -535,7 +538,12 @@ const LICENCE_CATEGORIES = ['AM', 'A1', 'A2', 'A', 'B1', 'B', 'BE', 'C1', 'C1E',
 
 // ── Main entry point ──────────────────────────────────────────
 
-export function extractBulgarianDocument(rawLines: BgOcrLine[], documentTypeHint?: string): BgExtraction {
+/**
+ * @param boxes the recognizer's individual text boxes with positions (0–1 of the
+ *   image). When given, ID-card fields are read from the box layout first
+ *   (layout.ts) and the text parser only fills what the layout could not read.
+ */
+export function extractBulgarianDocument(rawLines: BgOcrLine[], documentTypeHint?: string, boxes?: BgBox[]): BgExtraction {
   const lines = rawLines
     .map(l => ({ ...l, text: foldLatinLookalikes(l.text ?? '').trim() }))
     .filter(l => l.text.length > 0);
@@ -674,6 +682,25 @@ export function extractBulgarianDocument(rawLines: BgOcrLine[], documentTypeHint
     }
   }
 
+  // ID cards: values read from the box layout replace the text parser's
+  const sources: Record<string, BgValueSource | 'text'> = {};
+  if (boxes?.length && layout.document === 'id_card') {
+    for (const key of Object.keys(fields)) sources[key] = 'text';
+    for (const [key, v] of Object.entries(parseBulgarianLayout(boxes, layout.generation).fields)) {
+      fields[key] = v.value;
+      conf[key] = v.confidence;
+      sources[key] = v.source;
+    }
+    // A name the layout could not read is better missing (→ review) than taken from
+    // merged text ("IVANOVA VМE СЛАВИНА NAMNE SLAVINA")
+    for (const key of Object.keys(sources)) {
+      if (sources[key] !== 'text' || !/_(cyrillic|latin)$/.test(key) || !/^(surname|given_name|patronymic)_/.test(key)) continue;
+      const v = String(fields[key] ?? '');
+      const ok = key.endsWith('_cyrillic') ? /^[А-ЯЁ]+(?:[ -][А-ЯЁ]+){0,2}$/.test(v) : /^[A-Z]+(?:[ -][A-Z]+){0,2}$/.test(v);
+      if (!ok) { delete fields[key]; delete conf[key]; delete sources[key]; }
+    }
+  }
+
   // Fallbacks over the whole text when a label was not read
   const allText = lines.filter(l => !isMrzLine(l.text)).map(l => l.text).join('\n');
   if (!fields.personal_number) {
@@ -711,7 +738,7 @@ export function extractBulgarianDocument(rawLines: BgOcrLine[], documentTypeHint
     if (info.valid && fields.sex) fields.personal_number_matches_sex = info.sex === fields.sex;
   }
 
-  return { layout, fields, confidence_scores: conf };
+  return { layout, fields, confidence_scores: conf, ...(Object.keys(sources).length ? { sources } : {}) };
 }
 
 /**
@@ -755,6 +782,7 @@ export function applyBulgarianExtraction(ocrData: Record<string, any>, extractio
     ocrData.classification_confidence = extraction.layout.confidence;
   }
   ocrData.bg_layout = extraction.layout;
+  if (extraction.sources) ocrData.bg_field_sources = extraction.sources;
   ocrData.issuing_country = 'BG';
 }
 

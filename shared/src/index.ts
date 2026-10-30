@@ -69,7 +69,9 @@ export {
   lnchChecksumValid, classifyPersonalNumber,
   extractBulgarianDocument, applyBulgarianExtraction, identifyBulgarianLayout,
   parseBgDate, parseBgDocumentNumber, crossCheckBulgarianMrz, formatBulgarianDocument,
+  parseBulgarianLayout, confirmBulgarianFields, BG_CRITICAL_FIELDS,
 } from './providers/ocr/bg/index.js';
+export type { BgBox, BgLayoutValue, BgLayoutResult, BgValueSource, BgConfirmation, BgFieldCheck, BgFieldStatus, BgMrzInput } from './providers/ocr/bg/index.js';
 export type { EgnInfo, BgOcrLine, BgLayout, BgExtraction, BgDocumentKind, BgMrzFields, BgMrzSummaryInput } from './providers/ocr/bg/index.js';
 
 // Verification models

@@ -159,6 +159,18 @@ export const CrossValidationResultSchema = z.object({
   verdict: z.enum(['PASS', 'REVIEW', 'REJECT']),
   dl_format_validation: DlFormatValidationSchema.optional(),
   address_validation: AddressValidationSchema.optional(),
+  /** Bulgarian ID cards: per-field status from independent sources (bg/confirm.ts) */
+  field_confirmation: z.object({
+    fields: z.record(z.object({
+      value: z.string().nullable(),
+      status: z.enum(['confirmed', 'single_source', 'conflict', 'invalid', 'missing']),
+      sources: z.record(z.string()),
+      disagreeing: z.array(z.string()).optional(),
+      reason: z.string().optional(),
+    })),
+    review_fields: z.array(z.object({ field: z.string(), status: z.string(), reason: z.string() })),
+    all_critical_confirmed: z.boolean(),
+  }).optional(),
 });
 
 export type CrossValidationResult = z.infer<typeof CrossValidationResultSchema>;

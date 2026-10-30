@@ -10,6 +10,7 @@ import {
   classifyDocument, applyUkDlCrossCheck, isLikelyUkDl,
   extractBulgarianDocument, applyBulgarianExtraction, foldLatinLookalikes,
 } from '@idswyft/shared';
+import sharp from 'sharp';
 import { logger } from '@/utils/logger.js';
 import {
   type OcrScript, getOcrModelPaths, getOcrDetectionOptions, scriptForCountry, looksBulgarian,
@@ -411,7 +412,7 @@ export class PaddleOCRProvider implements OCRProvider {
     if (country === 'BG') {
       // Dedicated Bulgarian extractor: bilingual labels, Cyrillic + Latin names, ЕГН
       const callerType = documentType && documentType !== 'auto' ? documentType : undefined;
-      const extraction = extractBulgarianDocument(this.readingOrderLines(result), callerType);
+      const extraction = extractBulgarianDocument(this.readingOrderLines(result), callerType, await this.layoutBoxes(result, buffer));
       applyBulgarianExtraction(ocrData, extraction);
       logger.info('PaddleOCR Bulgarian extraction', {
         script,
@@ -516,6 +517,23 @@ export class PaddleOCRProvider implements OCRProvider {
    * spans several rows (Bulgarian ID fronts: "RADNEVA РАДНЕВА МАРИЦА IVANOVA …").
    * Confidence is the mean of the line's boxes when the line counts agree.
    */
+  /**
+   * Every recognized box with its position as a fraction (0–1) of the image, for
+   * the layout-aware Bulgarian parser. Empty boxes are dropped.
+   */
+  private async layoutBoxes(result: { lines: RecognitionResult[][] }, buffer: Buffer) {
+    let { width, height } = await sharp(buffer).metadata().catch(() => ({ width: undefined, height: undefined }));
+    const all = result.lines.flat().filter(item => item.text?.trim());
+    // Fall back to the boxes' extent when the image size cannot be read
+    width ||= Math.max(1, ...all.map(i => i.box.x + i.box.width));
+    height ||= Math.max(1, ...all.map(i => i.box.y + i.box.height));
+    return all.map(item => ({
+      text: item.text,
+      confidence: item.confidence,
+      x: item.box.x / width!, y: item.box.y / height!, w: item.box.width / width!, h: item.box.height / height!,
+    }));
+  }
+
   private readingOrderLines(result: { text: string; lines: RecognitionResult[][] }): FlatLine[] {
     const texts = (result.text ?? '').split('\n');
     const all = result.lines.flat();

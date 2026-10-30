@@ -12,4 +12,8 @@ export {
 } from './BulgarianExtractor.js';
 export type { BgOcrLine, BgLayout, BgExtraction, BgDocumentKind, BgMrzFields } from './BulgarianExtractor.js';
 export { formatBulgarianDocument } from './format.js';
+export { parseBulgarianLayout } from './layout.js';
+export type { BgBox, BgLayoutValue, BgLayoutResult, BgValueSource } from './layout.js';
+export { confirmBulgarianFields, BG_CRITICAL_FIELDS } from './confirm.js';
+export type { BgConfirmation, BgFieldCheck, BgFieldStatus, BgMrzInput } from './confirm.js';
 export type { BgMrzSummaryInput } from './format.js';

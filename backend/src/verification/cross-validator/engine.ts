@@ -6,7 +6,8 @@
  * with per-field breakdown and overall weighted score.
  */
 
-import type { FrontExtractionResult, BackExtractionResult, CrossValidationResult } from '@idswyft/shared';
+import type { FrontExtractionResult, BackExtractionResult, CrossValidationResult, BgMrzInput } from '@idswyft/shared';
+import { confirmBulgarianFields } from '@idswyft/shared';
 import { FIELD_WEIGHTS, THRESHOLD_PASS, THRESHOLD_REVIEW } from './config.js';
 import { compareIdNumber, compareName, compareDate, compareNationality, compareAddress } from './comparators.js';
 import { normalizeDate } from './normalizers.js';
@@ -215,6 +216,19 @@ export function crossValidate(
     console.log('⚠️  DL format validation FAIL nudged verdict from PASS → REVIEW');
   }
 
+  // Bulgarian ID cards: every critical field must be backed by an independent source
+  // on the card (MRZ with its check digit, the ЕГН, the transliteration), or a human
+  // reviews it. A near-match name no longer passes on the strength of the numbers.
+  let fieldConfirmation: CrossValidationResult['field_confirmation'] = undefined;
+  if (String(frontOcr.issuing_country ?? '').toUpperCase() === 'BG' && frontOcr.bg_layout) {
+    const backOcr = ((back as BackExtractionResult & { ocr?: Record<string, unknown> }).ocr) ?? {};
+    fieldConfirmation = confirmBulgarianFields(frontOcr, backOcr, back.mrz_result as BgMrzInput | null);
+    if (verdict === 'PASS' && !fieldConfirmation.all_critical_confirmed) {
+      verdict = 'REVIEW';
+      console.log(`🔍 Bulgarian fields not confirmed (${fieldConfirmation.review_fields.map(f => f.field).join(', ')}) — PASS → REVIEW`);
+    }
+  }
+
   console.log('🔎 ── Cross-Validation Result ─────────────────────');
   console.log(`   Matched weight: ${matchedWeight.toFixed(2)} / 1.00 (${Object.keys(fieldScores).filter(f => fieldScores[f].score > 0 || FIELD_WEIGHTS[f]?.critical).length} fields compared)`);
   console.log(`   Overall score: ${overallScore} (PASS >= ${THRESHOLD_PASS}, REVIEW >= ${THRESHOLD_REVIEW})`);
@@ -230,5 +244,6 @@ export function crossValidate(
     verdict,
     dl_format_validation: dlValidation.verdict !== 'SKIP' ? dlValidation : undefined,
     address_validation: addressValidation,
+    ...(fieldConfirmation ? { field_confirmation: fieldConfirmation } : {}),
   };
 }
