@@ -91,3 +91,12 @@ describe('layout parser — real-photo label misreads', () => {
     expect(f.surname_cyrillic).toBeUndefined()
   })
 })
+
+describe('layout parser — twin-letter names', () => {
+  const b = (text: string, x: number, y: number) => ({ text, confidence: 0.9, x, y, w: 0.1, h: 0.04 })
+  it('a name read with one Latin twin letter stays Cyrillic under a Cyrillic label', () => {
+    const f = values(parseBulgarianLayout([b('Име', 0.34, 0.37), b('MАРК', 0.44, 0.37), b('Name', 0.34, 0.41), b('MARK', 0.44, 0.41)], 'id_card_2010').fields)
+    expect(f.given_name_cyrillic).toBe('МАРК')
+    expect(f.given_name_latin).toBe('MARK')
+  })
+})

@@ -17,7 +17,7 @@
  * Pure and deterministic.
  */
 
-import { foldLatinLookalikes, foldCyrillicLookalikes, transliterateBulgarian, hasCyrillic } from './transliteration.js';
+import { foldLatinLookalikes, foldCyrillicLookalikes, foldTwinsToCyrillic, transliterateBulgarian, hasCyrillic } from './transliteration.js';
 import { normalizeEgn } from './egn.js';
 
 /** A recognized text box; coordinates are fractions (0–1) of the image size. */
@@ -159,8 +159,9 @@ function nameTokens(text: string, lang: 'cyr' | 'lat', wholeBox = false): { cyri
     if (token.length < 2 || token !== token.toUpperCase()) continue;
     const hasCyrOnly = /[БГДЖЗИЙЛПФЦЧШЩЪЬЮЯ]/.test(token);
     const hasLatOnly = /[DFGIJLNQRSUVWZ]/.test(token);
-    if (hasCyrOnly || (!hasLatOnly && hasCyrillic(token) && lang === 'cyr')) {
-      const folded = foldCyrillicLookalikes(token);
+    // A word of twin letters only ("MАРК", even "MAPK") follows the label's language
+    if (hasCyrOnly || (!hasLatOnly && lang === 'cyr')) {
+      const folded = foldTwinsToCyrillic(foldCyrillicLookalikes(token));
       if (/^[А-ЯЁ\-]+$/.test(folded)) cyr.push(folded);
     } else if (hasLatOnly || lang === 'lat' || !hasCyrillic(token)) {
       const folded = foldLatinLookalikes(token).replace(/[А-Яа-я]/g, '');

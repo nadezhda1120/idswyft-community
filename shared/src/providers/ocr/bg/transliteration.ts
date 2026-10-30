@@ -69,26 +69,37 @@ const CYRILLIC_LOOKALIKE_TO_LATIN: Record<string, string> = {
   а: 'a', е: 'e', о: 'o', р: 'p', с: 'c', у: 'y', х: 'x', і: 'i', ј: 'j', ѕ: 's',
 };
 
-/** Latin capital letters that are visually identical to a Bulgarian Cyrillic letter. */
+/**
+ * Latin letters that are visually identical to a Bulgarian Cyrillic letter. Upper
+ * and lower case are separate: lowercase b, h, k, m, t are NOT twins of в, н, к,
+ * м, т (and in the italic labels on the cards "m" is what т looks like).
+ */
 const LATIN_LOOKALIKE_TO_CYRILLIC: Record<string, string> = {
   A: 'А', B: 'В', E: 'Е', K: 'К', M: 'М', H: 'Н', O: 'О', P: 'Р', C: 'С', T: 'Т',
   Y: 'У', X: 'Х',
+  a: 'а', e: 'е', o: 'о', p: 'р', c: 'с', y: 'у', x: 'х',
 };
+
+/** A Latin letter with no Cyrillic twin (D, F, G, I, … and lowercase b, h, k, m, t …) */
+const LATIN_ONLY_RE = /[A-Za-z]/;
+const isLatinOnly = (ch: string) => LATIN_ONLY_RE.test(ch) && !(ch in LATIN_LOOKALIKE_TO_CYRILLIC);
 
 /**
  * Fold Cyrillic look-alike letters to Latin inside tokens that are clearly Latin
  * or machine-readable: a Cyrillic recognition model often emits "А" for "A" in
  * MRZ lines and document numbers.
  *
- * A whitespace-separated token is folded only when it contains a Latin letter,
- * a digit or the MRZ filler "<", and every Cyrillic letter in it has a Latin twin.
- * Pure Cyrillic words (names, labels) are left untouched.
+ * A whitespace-separated token is folded only when there is evidence it is not
+ * Cyrillic: a digit, the MRZ filler "<", or a Latin letter that has no Cyrillic
+ * twin ("ВGР" → "BGP", "АА1234567" → "AA1234567"); and only when every Cyrillic
+ * letter in it has a Latin twin. A word made only of twin letters ("MАРК") is left
+ * as read: whether it is Cyrillic or Latin is decided later from its label.
  */
 export function foldLatinLookalikes(line: string): string {
   if (!line || !hasCyrillic(line)) return line;
   return line.replace(/[^\s\/]+/g, (token) => {
     if (!hasCyrillic(token)) return token;
-    if (!/[A-Za-z0-9<]/.test(token)) return token;
+    if (!/[0-9<]/.test(token) && ![...token].some(isLatinOnly)) return token;
     const cyr = token.match(/[Ѐ-ӿ]/g) ?? [];
     if (!cyr.every(ch => ch in CYRILLIC_LOOKALIKE_TO_LATIN)) return token;
     return token.replace(/[Ѐ-ӿ]/g, ch => CYRILLIC_LOOKALIKE_TO_LATIN[ch] ?? ch);
@@ -97,16 +108,23 @@ export function foldLatinLookalikes(line: string): string {
 
 /**
  * Fold Latin look-alike letters to Cyrillic inside tokens that are otherwise
- * Cyrillic (e.g. "ИBAHOBA" → "ИВАНОВА"). Used on the Cyrillic name fields only.
+ * Cyrillic (e.g. "ИBAHOBA" → "ИВАНОВА"). Each case maps only to its own twin.
+ * Used on the Cyrillic name and value fields.
  */
 export function foldCyrillicLookalikes(token: string): string {
   if (!token || !hasCyrillic(token)) return token;
   if (/[0-9<]/.test(token)) return token;
   const latin = token.match(/[A-Za-z]/g) ?? [];
-  if (!latin.every(ch => ch.toUpperCase() in LATIN_LOOKALIKE_TO_CYRILLIC)) return token;
-  return token.replace(/[A-Za-z]/g, ch => {
-    const cyr = LATIN_LOOKALIKE_TO_CYRILLIC[ch.toUpperCase()];
-    if (!cyr) return ch;
-    return ch === ch.toUpperCase() ? cyr : cyr.toLowerCase();
-  });
+  if (!latin.every(ch => ch in LATIN_LOOKALIKE_TO_CYRILLIC)) return token;
+  return token.replace(/[A-Za-z]/g, ch => LATIN_LOOKALIKE_TO_CYRILLIC[ch] ?? ch);
+}
+
+/**
+ * Fold a token made only of twin letters to Cyrillic ("MАРК" → "МАРК"), for a
+ * value whose label says it is Cyrillic. Unlike foldCyrillicLookalikes it also
+ * applies when no Cyrillic letter is left ("MAPK"), since the label decides.
+ */
+export function foldTwinsToCyrillic(token: string): string {
+  if (!token || /[0-9<]/.test(token) || [...token].some(isLatinOnly)) return token;
+  return token.replace(/[A-Za-z]/g, ch => LATIN_LOOKALIKE_TO_CYRILLIC[ch] ?? ch);
 }

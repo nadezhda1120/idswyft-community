@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { transliterateBulgarian, foldLatinLookalikes, foldCyrillicLookalikes } from './transliteration.js'
+import { transliterateBulgarian, foldLatinLookalikes, foldCyrillicLookalikes, foldTwinsToCyrillic } from './transliteration.js'
 import { parseEgn, findEgnInText } from './egn.js'
 import { extractBulgarianDocument, applyBulgarianExtraction, parseBgDate, parseBgDocumentNumber } from './BulgarianExtractor.js'
 
@@ -39,6 +39,26 @@ describe('look-alike folding', () => {
   it('folds Latin look-alikes inside Cyrillic names', () => {
     expect(foldCyrillicLookalikes('ИBAHOBA')).toBe('ИВАНОВА')
     expect(foldCyrillicLookalikes('IVANOVA')).toBe('IVANOVA')
+  })
+
+  it('folds to Latin only with a digit, "<" or a Latin-only letter', () => {
+    expect(foldLatinLookalikes('ВGР')).toBe('BGP')            // G has no Cyrillic twin
+    expect(foldLatinLookalikes('MАРК')).toBe('MАРК')          // twins only: left for the label to decide
+    expect(foldLatinLookalikes('ОТТО <<')).toBe('ОТТО <<')    // separate tokens
+    expect(foldLatinLookalikes('КАФЯВИ/ВРОWN')).toBe('КАФЯВИ/BPOWN') // W is Latin-only; Р→P is its twin
+  })
+
+  it('maps lowercase letters only to their real twins', () => {
+    expect(foldCyrillicLookalikes('Дaтa')).toBe('Дата')       // a is a twin of а
+    expect(foldCyrillicLookalikes('Даmа')).toBe('Даmа')       // italic т reads as m: m is no twin of м
+    expect(foldCyrillicLookalikes('Иbан')).toBe('Иbан')       // b is no twin of в
+    expect(foldLatinLookalikes('Дaтa')).toBe('Дaтa')          // no Latin-only letter, no digit
+  })
+
+  it('folds a twin-only word to Cyrillic when the label says so', () => {
+    expect(foldTwinsToCyrillic('MАРК')).toBe('МАРК')
+    expect(foldTwinsToCyrillic('MAPK')).toBe('МАРК')
+    expect(foldTwinsToCyrillic('MARK')).toBe('MARK')          // R is Latin-only
   })
 })
 
