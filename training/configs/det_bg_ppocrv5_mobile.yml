@@ -1,0 +1,32 @@
+# Fine-tune the PP-OCRv5 mobile text detector on Bulgarian card layouts.
+#
+# Only when evaluation shows the stock detector misses or merges fields on real
+# cards (the template-based extractors depend on line boxes). Uses det/{split}.txt
+# from build_dataset.py. Same reproducibility rules as the recognition config.
+
+name: bg-text-det
+kind: detection
+
+paddleocr:
+  repo: https://github.com/PaddlePaddle/PaddleOCR.git
+  ref: v3.7.0
+  base_config: configs/det/PP-OCRv5/PP-OCRv5_mobile_det.yml
+
+pretrained:
+  url: https://paddle-model-ecology.bj.bcebos.com/paddlex/official_pretrained_model/PP-OCRv5_mobile_det_pretrained.pdparams
+  sha256: null
+
+seed: 2026
+
+overrides:
+  Global.use_gpu: false
+  Global.distributed: false
+  Global.epoch_num: 100
+  Global.eval_batch_step: [0, 200]
+  Global.save_epoch_step: 20
+  Global.print_batch_step: 20
+  Optimizer.lr.learning_rate: 0.0002
+  Optimizer.lr.warmup_epoch: 1
+  Train.loader.batch_size_per_card: 4
+  Train.loader.num_workers: 2
+  Eval.loader.num_workers: 1

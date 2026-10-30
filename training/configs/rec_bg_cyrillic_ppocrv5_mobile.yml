@@ -1,0 +1,45 @@
+# Fine-tune the PP-OCRv5 mobile Cyrillic recognizer on Bulgarian document text.
+#
+# Reproducible: the PaddleOCR source is pinned to a tag, the pretrained weights to a
+# checksum, the dictionary is the baseline model's own (same 852 classes, so the
+# fine-tuned model is a drop-in replacement in the engine), and train.py writes the
+# fully resolved PaddleOCR config plus the dataset checksums into the run folder.
+#
+# `overrides` are applied to the base config by dotted path; a number selects a list
+# item (Train.dataset.transforms.1.RecConAug... is the 2nd transform).
+
+name: bg-cyrillic-rec
+
+paddleocr:
+  repo: https://github.com/PaddlePaddle/PaddleOCR.git
+  ref: v3.7.0
+  base_config: configs/rec/PP-OCRv5/multi_language/cyrillic_PP-OCRv5_mobile_rec.yaml
+
+pretrained:
+  # Training weights of the model the engine ships (cyrillic_PP-OCRv5_mobile_rec_infer.onnx)
+  url: https://paddle-model-ecology.bj.bcebos.com/paddlex/official_pretrained_model/cyrillic_PP-OCRv5_mobile_rec_pretrained.pdparams
+  sha256: d936f0e73fc6d2159af3e4408e7bb9dba72db9ceb377e84343b1b27f237c9117
+
+# ppu-format dictionary of the baseline model (index 0 = blank); train.py converts it
+baseline_dictionary: ../models/baseline/ppocrv5_cyrillic_dict.txt
+
+seed: 2026
+
+overrides:
+  Global.use_gpu: false
+  Global.distributed: false
+  Global.epoch_num: 30
+  Global.eval_batch_step: [0, 500]
+  Global.save_epoch_step: 10
+  Global.print_batch_step: 50
+  # MRZ lines are 30 characters; labelled lines ("Дата на раждане/Date of birth 01.08.1995") ~45
+  Global.max_text_length: 50
+  Architecture.Head.head_list.1.NRTRHead.max_text_length: 50
+  Train.dataset.transforms.1.RecConAug.max_text_length: 50
+  Optimizer.lr.learning_rate: 0.0002
+  Optimizer.lr.warmup_epoch: 1
+  Train.sampler.first_bs: 64
+  Train.loader.batch_size_per_card: 64
+  Train.loader.num_workers: 4
+  Eval.loader.batch_size_per_card: 64
+  Eval.loader.num_workers: 2

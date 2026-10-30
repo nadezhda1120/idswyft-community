@@ -1,0 +1,2 @@
+# OCR dictionaries are read line by line by the engine: never convert their line endings
+training/models/**/*.txt -text

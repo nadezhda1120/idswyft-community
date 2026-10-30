@@ -1,0 +1,7 @@
+# Fine-tuning and export (train.py, export.py), on top of requirements.txt.
+# Pinned so a run can be repeated; the PaddleOCR source is a git checkout at the
+# tag in configs/*.yml (its own requirements are installed from that checkout).
+paddlepaddle==3.3.1
+paddle2onnx==2.1.0
+onnx-graphsurgeon==0.5.8
+sympy==1.14.0

@@ -19,6 +19,7 @@ import express from 'express';
 import { logger } from '@/utils/logger.js';
 import { configureSharedLogger } from '@idswyft/shared';
 import extractRouter from '@/routes/extract.js';
+import { describeOcrModel, type OcrScript } from '@/config/ocrModels.js';
 
 const app = express();
 // Indented JSON: responses are meant to be read by people testing the engine too.
@@ -33,7 +34,11 @@ app.use(express.json({ limit: '1mb' }));
 
 // Health check
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'idswyft-engine', uptime: process.uptime() });
+  // Which OCR recognition model each script loads (registry models are checksum-verified)
+  const ocrModel = (script: OcrScript) => {
+    try { return describeOcrModel(script); } catch (err) { return { error: err instanceof Error ? err.message : String(err) }; }
+  };
+  res.json({ status: 'ok', service: 'idswyft-engine', uptime: process.uptime(), ocr_models: { latin: ocrModel('latin'), cyrillic: ocrModel('cyrillic') } });
 });
 
 // Optional API key: when ENGINE_API_KEY is set, /extract/* requires it in the
